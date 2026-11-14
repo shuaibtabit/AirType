@@ -1,6 +1,6 @@
 # AirType hackathon handoff
 
-AirType is a Mac prototype for silent text entry using a WHOOP 5.0 on your wrist. The pipeline is **motion capture → gesture detection → text entry**. We have live capture and an offline detector for two gestures. Text entry is still a design.
+AirType is a Mac prototype for silent text entry using a WHOOP 5.0 on your wrist. The current pipeline is **motion capture → gesture classification → continuous letter-group stream → dictionary word segmentation → phrase ranking → confirmed text**. One gesture represents one letter position; spaces are inferred automatically. The previous two-gesture character format is superseded.
 
 ## What works
 
@@ -36,6 +36,6 @@ New recordings go under `captures/`, which Git ignores. The [shared recording ca
 
 1. **Test all six directions.** Keep the elbow supported and start with the thumb up. Roll in and out turn the palm down and up. Tilt up and down lift and lower the forearm from the elbow. Swing left and right pivot the forearm sideways. Collect repeated examples across sessions and include returns, walking, reaching, and drinking. The six-gesture pilot collects examples. Tilt and swing recognition still need validation.
 2. **Train and score a gesture model.** Compare it with the rule-based detector on separate recordings. Measure which gestures get confused, how often extra calls happen during everyday motion, and how long feedback takes. Check repeated gestures and how the detector handles the return to neutral.
-3. **Prototype text entry in a local text buffer.** Six gestures give 36 ordered pairs for exact letters and controls. A second option groups letters into six buckets and uses word context to infer the intended text from one gesture per letter. Compare entry speed and correction effort before choosing a default. A tap for space and a shake for undo are ideas to test if the six directions work well.
+3. **Evaluate continuous predictive text.** The decoder in [app/](app/README.md) builds dictionary paths through a continuous gesture stream, infers spaces and ranks phrases by frequency, optionally with Gemini Decision context ranking. Letter groups remain illustrative. Target 80–90% first-suggestion word correctness/acceptance, measured on held-out data; no such result has been established. The site must offer alternatives, correction and confirmation. No agent actions are implemented.
 
 The [project plan](PLAN.md) has the hardware results and milestones. The [protocol notes](research/whoop-ble.md) explain the WHOOP stream and pairing behavior.

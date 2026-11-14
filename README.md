@@ -1,8 +1,8 @@
 # AirType
 
-AirType is a local experiment in typing with wrist gestures. The first milestone is a timestamped, six-axis motion recording from a physical WHOOP 5.0 on a Mac.
+AirType is a WHOOP wrist-gesture text-entry prototype. The current text design uses one gesture per letter group, infers spaces from a continuous stream, and ranks dictionary phrases with optional Gemini context ranking. It replaces the earlier two-gesture character design. See [app/README.md](app/README.md) for the runnable decoder and evaluation.
 
-AirType builds without third-party packages. The capture tool targets macOS 13+ with Swift 5.9+. It implements the reverse-engineered WHOOP 5.0/MG `fd4b` capture path. The user's strap, firmware, and Mac Bluetooth session still need hardware validation.
+The Swift capture tool and Python demo decoder run without third-party packages; exporting a larger vocabulary optionally uses wordfreq. The capture tool targets macOS 13+ with Swift 5.9+. It implements the reverse-engineered WHOOP 5.0/MG `fd4b` capture path. The hardware validation results are recorded in PLAN.md; decoder accuracy and live site integration remain unvalidated.
 
 ## Open in Codex
 
