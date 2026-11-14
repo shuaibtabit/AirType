@@ -30,7 +30,7 @@ python3 -B ml/record_pilot.py '<UUID from discovery>' --allow-mac-bond --detect
 python3 -B ml/record_pilot.py '<UUID from discovery>' --allow-mac-bond --six-gestures
 ```
 
-Recordings go under `captures/`. Keep raw recordings, cue logs, and device IDs out of Git. To replay an existing local CSV without connecting to Bluetooth, run `python3 -B ml/detect_turns.py /path/to/motion.csv`.
+New recordings go under `captures/`, which Git ignores. The [shared recording catalog](recordings/README.md) explains the selected motion files and cue labels already in the repo. Keep device IDs and diagnostic logs local. To replay an existing local CSV without connecting to Bluetooth, run `python3 -B ml/detect_turns.py /path/to/motion.csv`.
 
 ## What to build next
 
