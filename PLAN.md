@@ -15,16 +15,34 @@ Hardware validation on November 11, 2026: WHOOP 5.0, firmware 50.43.2.0, macOS 2
 
 ## 2. Collect labeled gestures
 
-Choose three separable gestures and include background motion. Capture prompted examples and a continuous session with rest, natural movement and gestures in different orders. Mark gesture onsets and offsets on the host monotonic clock. Use a hardware trial to measure delivery delay before aligning labels. Details are in [ml/README.md](ml/README.md).
+Collected six gestures in the standing front and side arm positions, plus
+mixed sequences and ordinary motion. The fitted model uses 161 commands and
+124 background examples across five recordings. Keep capture files local.
+See [the ML guide](ml/README.md) for collection and review.
 
 ## 3. Classify and segment
 
-Train a small local baseline and evaluate it on a held-out recording session. Report per-class precision and recall, false activations per minute, segmentation error, and latency. Use the confusion matrix to decide whether to expand to six gestures. Test consecutive identical gestures before encoding letters.
+The frozen model correctly classified 43 of 44 reviewed gestures and 14 of 16
+sequences on a fresh mixed recording. It fired on three reviewed background
+movements. The first live rehearsal produced 32 calls with zero framing
+rejects. Repeated tilt-up remains unreliable. Check repeat handling, false
+triggers, and delay in a live sentence rehearsal before expanding the demo.
 
-## 4. Decode two-gesture characters
+## 4. Decode continuous six-group predictive text
 
-Map ordered pairs to characters in a versioned local codebook. Validate framing and correction in an in-app text buffer using known phrases, then compare character error rate and entry speed. See [app/README.md](app/README.md).
+The two-gesture character design is superseded. One gesture supplies one letter group; dictionary paths infer word boundaries from a continuous stream. Final letter groups are not selected. The initial decoder in app/t9_decoder.py uses a dictionary lattice and unigram beam, with optional Gemini Decision ranking of valid phrase candidates. See app/README.md for setup, interfaces and evaluation.
 
-## 5. Optionally reconstruct words
+Target: the intended word is the first suggestion 80–90% of the time, not merely in the top three. This is unvalidated. Measure aligned word accuracy, WER, phrase accuracy, candidate coverage, latency and real wearer acceptance on held-out phrases. Evaluate correct gesture streams separately from recorded classifier output.
 
-Keep the raw decoded text visible. Use a local dictionary and candidate scores from the gesture classifier to propose completions or vowel restoration in an explicit abbreviated input mode. Measure top-k suggestions, correction burden, and wrong substitutions against the direct decoder on held-out phrases. Accept replacements only through an explicit user action.
+## 5. Rehearse live text and integrate inferred spaces
+
+The local overlay consumes live gesture events and currently uses word pauses.
+Replay and keyboard tests exercised the text path. Rehearse a live phrase with
+the overlay in preview mode. Verify explicit finish, correction, and typing
+permissions before sending text to another app. Integrate the continuous
+decoder with the live event buffer so the wearer can enter phrases without
+marking spaces.
+
+## 6. Connect suggestions to the site
+
+Display the raw gesture stream and ranked phrases. Allow backspace, alternatives, cancel, utterance finish and explicit confirmation. Word boundaries are inferred; there is no first/second-input pairing state. Preserve corrections and abstentions in evaluation logs. Agent actions remain outside this prototype.

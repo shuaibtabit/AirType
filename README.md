@@ -1,12 +1,46 @@
 # AirType
 
-AirType is a local experiment in typing with wrist gestures. The first milestone is a timestamped, six-axis motion recording from a physical WHOOP 5.0 on a Mac.
+AirType turns wrist movements from a WHOOP 5.0 into text on a Mac. The six-gesture model recognizes roll in/out, tilt up/down, and swing left/right. The live demo maps each recognized gesture to a letter group and shows candidate words in a floating overlay.
 
-AirType builds without third-party packages. The capture tool targets macOS 13+ with Swift 5.9+. It implements the reverse-engineered WHOOP 5.0/MG `fd4b` capture path. The user's strap, firmware, and Mac Bluetooth session still need hardware validation.
+## Try the demo
 
-## Open in Codex
+The Swift capture and overlay target macOS 13+ with Swift 5.9+. The ML model was tested with Python 3.9 and the pinned dependencies below. Run from the repository root.
 
-In the Codex sidebar, choose the option to add or open a local project and select this **AirType** folder (the folder containing `Package.swift` and `.git`). Start a local chat in that project. A starting prompt is “Read AGENTS.md and PLAN.md. Walk me through WHOOP discovery first, then help me validate a local six-axis capture. Ask me before any pairing change.”
+```sh
+swift build
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r ml/requirements.txt
+```
+
+Check the text path without Bluetooth. This sample shows “go home” in Terminal.
+
+```sh
+printf '24 2442\nq\n' | python -B app/airtype.py --keys --no-overlay --no-typing
+```
+
+For the live demo, discover your strap as described below and use the UUID printed beside it. The overlay opens in preview mode with this command. `--always-on` skips the experimental double-tap activation.
+
+```sh
+python -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --always-on --no-typing
+```
+
+The overlay currently uses a short pause between words and a longer pause to finish the sentence. For a gesture-only check, use the same model in the Terminal readout.
+
+```sh
+python -B ml/live.py '<UUID from discovery>' --allow-mac-bond --six-model models/six-model.joblib
+```
+
+The [standalone continuous decoder](app/README.md) infers spaces without a pause between words and supports optional Gemini phrase ranking. Its inferred boundaries are still separate from the live overlay.
+
+## What has been verified
+
+- WHOOP 5.0 hardware capture and Ctrl-C cleanup work on the tested Mac. The strap delivered about 100 samples per second in roughly one-second batches.
+- The frozen six-gesture model got 43 of 44 reviewed movements and 14 of 16 exact sequences on a separate mixed recording, with three false commands during reviewed background motion. The wearer reported one unidentified execution mistake, so these counts use the reviewed cue-aligned movements.
+- The six-gesture readout ran live with all six labels represented, 32 calls, and no framing rejects. This was an unguided rehearsal, so the call count is not an accuracy score. Repeated tilt-up and its downward return remain trouble spots.
+- The overlay path works in offline replay and keyboard tests. A full live sentence through the overlay, double-tap activation, and typing into another app still need a rehearsal. Typing mode requires macOS Accessibility permission for the Terminal or app launching AirType.
+
+See [the hackathon handoff](HACKATHON.md) for the demo checklist and [the plan](PLAN.md) for next steps.
 
 ## Build and discover
 
@@ -58,6 +92,7 @@ The CSV has one row per paired sample. It preserves strap Unix seconds and fract
 
 - `sensor/` holds the capture executable and protocol tests.
 - `research/` holds the source audit, firmware evidence, and local checkout locations.
-- `ml/` holds the gesture collection and classification design.
-- `app/` holds the character encoding and text-entry design.
+- `ml/` contains the prompted recorder, training, evaluation, and live gesture readout.
+- `app/` contains the live demo and standalone continuous decoder.
+- `models/` holds the two fitted gesture models.
 - [PLAN.md](PLAN.md) tracks milestones and evidence.

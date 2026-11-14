@@ -31,7 +31,7 @@ from session import Action, Session, Show, TypeText  # noqa: E402
 from taps import double_taps  # noqa: E402
 
 OVERLAY = ROOT / ".build/debug/airtype-overlay"
-DEFAULT_MODEL = ROOT / "captures/six-model.joblib"
+DEFAULT_MODEL = ROOT / "models/six-model.joblib"
 TICK_SECONDS = 0.25
 LLM_MODEL = "claude-haiku-5-5"
 LLM_TIMEOUT_SECONDS = 8
