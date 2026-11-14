@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "groups": {
+    "roll_in": "abcd",
+    "roll_out": "efgh",
+    "tilt_up": "ijkl",
+    "tilt_down": "mnop",
+    "swing_left": "qrst",
+    "swing_right": "uvwxyz"
+  }
+}

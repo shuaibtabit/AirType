@@ -8,7 +8,10 @@ let plist = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let package = Package(
     name: "AirType",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "airtype-capture", targets: ["AirTypeCapture"])],
+    products: [
+        .executable(name: "airtype-capture", targets: ["AirTypeCapture"]),
+        .executable(name: "airtype-overlay", targets: ["AirTypeOverlay"]),
+    ],
     targets: [
         .executableTarget(
             name: "AirTypeCapture",
@@ -16,6 +19,7 @@ let package = Package(
             linkerSettings: [.unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT",
                                            "-Xlinker", "__info_plist", "-Xlinker", plist])]
         ),
+        .executableTarget(name: "AirTypeOverlay", path: "sensor/Sources/AirTypeOverlay"),
         .testTarget(name: "AirTypeCaptureTests", dependencies: ["AirTypeCapture"],
                     path: "sensor/Tests/AirTypeCaptureTests")
     ]
