@@ -1,6 +1,6 @@
 # AirType
 
-AirType is a WHOOP wrist-gesture text-entry prototype. The current text design uses one gesture per letter group, infers spaces from a continuous stream, and ranks dictionary phrases with optional Gemini context ranking. It replaces the earlier two-gesture character design. See [app/README.md](app/README.md) for the runnable decoder and evaluation.
+AirType is a WHOOP wrist-gesture text-entry prototype. The current text design uses one gesture per letter group, infers spaces from a continuous stream, and uses a generative Gemini LLM to propose phrases, with exact gesture-to-letter validation. A dictionary decoder remains as a comparison baseline. It replaces the earlier two-gesture character design. See [app/README.md](app/README.md) for the runnable decoder and evaluation.
 
 The Swift capture tool and Python demo decoder run without third-party packages; exporting a larger vocabulary optionally uses wordfreq. The capture tool targets macOS 13+ with Swift 5.9+. It implements the reverse-engineered WHOOP 5.0/MG `fd4b` capture path. The hardware validation results are recorded in PLAN.md; decoder accuracy and live site integration remain unvalidated.
 

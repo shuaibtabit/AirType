@@ -92,6 +92,9 @@ class Decoder:
             if isinstance(gesture, bool) or not isinstance(gesture, (str, int)):
                 raise ValueError("Each gesture must be a group ID or exact gesture name.")
             key = str(gesture)
+            if key not in self.aliases and key.isascii() and key.isdigit() and all(c in self.aliases for c in key):
+                result.extend(self.aliases[c] for c in key)
+                continue
             if key not in self.aliases:
                 raise ValueError(f"Unknown gesture token: {key!r}")
             result.append(self.aliases[key])

@@ -23,7 +23,7 @@ Train a small local baseline and evaluate it on a held-out recording session. Re
 
 ## 4. Decode continuous six-group predictive text
 
-The two-gesture character design is superseded. One gesture supplies one letter group; dictionary paths infer word boundaries from a continuous stream. Final letter groups are not selected. The initial decoder in app/t9_decoder.py uses a dictionary lattice and unigram beam, with optional Gemini Decision ranking of valid phrase candidates. See app/README.md for setup, interfaces and evaluation.
+The two-gesture character design is superseded. One gesture supplies one letter group; dictionary paths infer word boundaries from a continuous stream. Final letter groups are not selected. The primary language experiment is app/llm_decoder.py: generative Gemini proposes phrases, code validates every letter, and optional automatic mode accepts a valid first suggestion on utterance completion. app/t9_decoder.py remains a dictionary/unigram baseline with optional Gemini Decision ranking. See app/README.md for setup, interfaces and evaluation.
 
 Target: the intended word is the first suggestion 80–90% of the time, not merely in the top three. This is unvalidated. Measure aligned word accuracy, WER, phrase accuracy, candidate coverage, latency and real wearer acceptance on held-out phrases. Evaluate correct gesture streams separately from recorded classifier output.
 

@@ -1,0 +1,16 @@
+{"gestures": "242442", "expected": "go home", "context": "I want to"}
+{"gestures": "223442", "expected": "help me", "context": ""}
+{"gestures": "2233464531", "expected": "hello world", "context": ""}
+{"gestures": "3422161525", "expected": "i need water", "context": ""}
+{"gestures": "432152113342", "expected": "please call me", "context": ""}
+{"gestures": "3142442", "expected": "i am home", "context": ""}
+{"gestures": "14421113", "expected": "come back", "context": ""}
+{"gestures": "5544446", "expected": "stop now", "context": ""}
+{"gestures": "464142355216114", "expected": "my name is shayaan", "context": ""}
+{"gestures": "621522442", "expected": "we are home", "context": ""}
+{"gestures": "114646223442", "expected": "can you help me", "context": ""}
+{"gestures": "625", "expected": "yes", "context": ""}
+{"gestures": "44", "expected": "no", "context": ""}
+{"gestures": "2442", "expected": "home", "context": "I am going"}
+{"gestures": "2442", "expected": "hope", "context": "Despite the setbacks I still have"}
+{"gestures": "62151", "expected": "zebra", "context": ""}

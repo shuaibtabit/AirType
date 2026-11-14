@@ -1,4 +1,122 @@
-# Continuous six-group predictive text
+# Generative Gemini phrase decoder
+
+Current primary experiment: a **generative Gemini LLM** proposes phrases directly
+from the continuous gesture groups. This supersedes Gemini Decision as the primary
+language step. Dictionary lookup remains a local baseline and optional comparison;
+no new neural model is trained. Spaces are inferred automatically.
+
+## Start here
+
+From the repository root, with GEMINI_API_KEY set in your terminal:
+
+```sh
+python3 -m venv work/llm-venv
+source work/llm-venv/bin/activate
+python -m pip install -r app/requirements-llm.txt
+python3 -B app/llm_decoder.py 242442 --context 'I want to'
+```
+
+Enable automatic text acceptance on a **finished utterance**:
+
+```sh
+python3 -B app/llm_decoder.py 242442 --context 'I want to' --auto-commit
+```
+
+The default model is gemini-3.5-flash-lite. Set --model or GEMINI_TEXT_MODEL to
+another available generative model if your project lacks access. A successful
+Decisions API test does not establish access to this model. This path uses the
+Gemini Interactions API with structured JSON output and store=false, not the
+Decisions endpoint. Standard-library validation runs locally; google-genai is
+needed for live calls. No live Gemini test has run in the development workspace.
+
+The request includes the mapping, group stream, allowed letters at each position,
+and preceding confirmed text. It does not include expected test answers, wrist
+sensor data, or the user's API key in prompt text. Keep the key on the backend.
+It uses a 15-second request timeout, disables retries and automatic continuation,
+and enables no tools. Actual end-to-end latency still needs measurement.
+
+Gemini returns up to five phrases in ranked order. Code re-encodes each phrase
+and requires exact equality to the entire input stream. Wrong letters, wrong
+length, punctuation and extra words are filtered. A name absent from the
+frequency dictionary can still pass. Rank-one validity alone does NOT prove the
+intended meaning, grammar, or spelling. No dictionary word or sensor error is
+silently repaired. A model cannot guarantee all possible phrases were found.
+
+--auto-commit returns committed=true and committed_text only if the LLM's first
+suggestion passes validation, status is ok, and the utterance is finalized.
+An invalid top suggestion, uncertain status, API failure, missing key or no valid
+output leaves committed=false. Preview calls in the backend should keep
+finalized=False. The CLI treats --auto-commit as a finished utterance. The site
+must apply each finalized request once, ignore stale responses after edits, show
+committed text and offer undo. No site integration or agent actions are included.
+
+Unlike Decision API probabilities, a generative model's self-reported confidence
+is not an acceptance probability. We do not invent one or reuse the old 0.7 gate.
+Automatic mode accepts the best constraint-valid suggestion by policy, not by a
+measured correctness guarantee. It may still commit the wrong valid phrase.
+
+## Phrase tests and results
+
+Run the supplied **16 development examples** against the live model:
+
+```sh
+python3 -B app/llm_decoder.py --cases app/phrase_cases.jsonl --auto-commit > work/llm-results.json
+```
+
+This makes up to 16 API requests using your project quota/billing. Report top-1
+aligned word accuracy, WER, exact phrase accuracy, top-3 coverage, invalid outputs,
+API failures, auto-commit rate and correctness among commits. An uncertain or
+failed response counts as a miss, not an excluded example. Expected labels are
+used only for scoring and never sent to Gemini. Context must contain previously
+confirmed words only.
+
+The fixture includes go home, help me, hello world, i need water, please call me,
+i am home, come back, stop now, my name is shayaan, we are home, can you help me,
+yes, no, home, hope and zebra. It tests collisions, inferred boundaries and names.
+These are development probes, not a held-out benchmark. The home/hope cases share
+2442 and differ in preceding context.
+
+For an arbitrary probe with no known intended phrase:
+
+```sh
+python3 -B app/llm_decoder.py 1234356435
+```
+
+We cannot score its accuracy without an intended phrase. The larger local
+frequency baseline found e.g. "be in is unit" and "be in it unit"; those are
+constraint-valid candidates, not meaningful or validated interpretations.
+
+Offline checks (no real LLM responses):
+
+```sh
+python3 -B -m unittest discover -s app -p 'test_*decoder.py' -v
+```
+
+31 test methods pass: 18 existing baseline checks plus 13 LLM request/validation
+checks. They include simulated responses for go home, help me, hello world,
+i need water, please call me and a name, along with wrong letters/length/order,
+uncertainty, duplicates, missing key, malformed response and API failure. Mocked
+answers verify software behavior, NOT Gemini's semantic accuracy.
+
+A real-vocabulary **local frequency-only** experiment inspected 50,000 wordfreq
+entries and exported 47,973 ASCII words. On the 16 hand-chosen development cases,
+it matched 17/35 target words under minimum-edit alignment and 5/16 whole phrases.
+The intended phrase survived in the 32-path beam for 15/16 cases. These results
+show why contextual language ranking is needed; they do not measure Gemini.
+A compact results table is in [PHRASE_TEST_RESULTS.md](PHRASE_TEST_RESULTS.md).
+Generated third-party vocabulary remains local under work/.
+
+The 80–90% first-suggestion word goal remains unvalidated. After developing this
+prompt, use a fresh phrase set with fixed groups and model version; test both
+perfect gesture inputs and actual classifier recordings. Track real wearer
+acceptance separately from offline text correctness.
+
+## Dictionary / Gemini Decision comparison implementation
+
+The remainder documents the previous local baseline and optional Decisions API
+comparison. These remain runnable but are not the new primary LLM path.
+
+### Continuous six-group predictive text
 
 Current design: **one gesture per letter position**, with **automatically inferred spaces**. The old two-gesture character code and first/second-input timeout are superseded. The groups in gesture_groups.example.json are illustrative, not final.
 
