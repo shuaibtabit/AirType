@@ -21,10 +21,12 @@ Choose three separable gestures and include background motion. Capture prompted 
 
 Train a small local baseline and evaluate it on a held-out recording session. Report per-class precision and recall, false activations per minute, segmentation error, and latency. Use the confusion matrix to decide whether to expand to six gestures. Test consecutive identical gestures before encoding letters.
 
-## 4. Decode two-gesture characters
+## 4. Decode continuous six-group predictive text
 
-Map ordered pairs to characters in a versioned local codebook. Validate framing and correction in an in-app text buffer using known phrases, then compare character error rate and entry speed. See [app/README.md](app/README.md).
+The two-gesture character design is superseded. One gesture supplies one letter group; dictionary paths infer word boundaries from a continuous stream. Final letter groups are not selected. The initial decoder in app/t9_decoder.py uses a dictionary lattice and unigram beam, with optional Gemini Decision ranking of valid phrase candidates. See app/README.md for setup, interfaces and evaluation.
 
-## 5. Optionally reconstruct words
+Target: the intended word is the first suggestion 80–90% of the time, not merely in the top three. This is unvalidated. Measure aligned word accuracy, WER, phrase accuracy, candidate coverage, latency and real wearer acceptance on held-out phrases. Evaluate correct gesture streams separately from recorded classifier output.
 
-Keep the raw decoded text visible. Use a local dictionary and candidate scores from the gesture classifier to propose completions or vowel restoration in an explicit abbreviated input mode. Measure top-k suggestions, correction burden, and wrong substitutions against the direct decoder on held-out phrases. Accept replacements only through an explicit user action.
+## 5. Connect suggestions to the site
+
+Display the raw gesture stream and ranked phrases. Allow backspace, alternatives, cancel, utterance finish and explicit confirmation. Word boundaries are inferred; there is no first/second-input pairing state. Preserve corrections and abstentions in evaluation logs. Agent actions remain outside this prototype.
