@@ -1,18 +1,21 @@
 """Detect gestures while the strap streams, or while replaying a saved motion CSV.
 
-Live mode connects to the strap, which can replace the phone's pairing. Start
-thumb-up and hold still for the first second so the rest pose can be calibrated.
+Live mode connects to the strap, which can replace the phone's pairing.
+The original detector calibrates on a still thumb-up pose. Use --model with
+a locally trained roll model to detect rolls without a preset starting pose.
 """
 
 import argparse
 import csv
 import itertools
+import math
 import signal
 import subprocess
 import tempfile
 import time
 import uuid
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Optional
 
@@ -78,6 +81,22 @@ def gestures(lines: Iterable[str]) -> Iterator[Turn]:
     yield from detect(samples, neutral)
 
 
+def model_gestures(lines: Iterable[str], estimator) -> Iterator[Turn]:
+    """Apply the offline model incrementally and emit only roll commands."""
+    from roll_model import LABELS, gyro_rows, motion_bouts, readout
+
+    rows = gyro_rows(lines)
+    first = next(rows, None)
+    if first is None:
+        raise ValueError("The stream contains no timed samples.")
+    origin = first[0]
+    for bout in motion_bouts(itertools.chain((first,), rows)):
+        label = readout(estimator, [bout])[0]
+        if label in LABELS[:2]:
+            angle, _, _, _, _, x_energy, _ = bout.features
+            yield Turn(bout.start - origin, bout.end - origin, label, math.degrees(angle), x_energy)
+
+
 def saved(lines: Iterable[str], path: Path) -> Iterator[str]:
     """Pass lines through unchanged while keeping the raw stream on disk."""
     with path.open("w", newline="") as file:
@@ -122,14 +141,14 @@ def strap(device: uuid.UUID, recorder: Path = RECORDER) -> Iterator[Iterable[str
             process.stdout.close()
 
 
-def show(lines: Iterable[str]) -> int:
+def show(lines: Iterable[str], detector=gestures, *, angle_label="X turn") -> int:
     """Print gestures as they are confirmed. Ctrl-C ends the readout and keeps the count."""
     count = 0
     try:
-        for event in gestures(lines):
+        for event in detector(lines):
             count += 1
             print(f"  {event.end:7.2f} s  {event.direction.replace('_', ' '):9}  "
-                  f"X turn {event.angle_degrees:+.0f}°", flush=True)
+                  f"{angle_label} {event.angle_degrees:+.0f}°", flush=True)
     except KeyboardInterrupt:
         print("\nStopping.", flush=True)
     return count
@@ -142,14 +161,27 @@ def main() -> int:
                         help="Required for live mode. The Mac may replace the phone's pairing.")
     parser.add_argument("--replay", type=Path, help="Replay a saved motion.csv without Bluetooth")
     parser.add_argument("--realtime", action="store_true", help="Pace a replay at one frame per second")
+    models = parser.add_mutually_exclusive_group()
+    models.add_argument("--model", type=Path, help="Use a local roll model file for live detection or replay")
+    models.add_argument("--six-model", type=Path, help="Use a local six-gesture model file")
     args = parser.parse_args()
     if (args.device is None) == (args.replay is None):
         parser.error("Give a device UUID for live mode, or --replay with a motion.csv.")
 
-    count = 0
     try:
+        detector = gestures
+        angle_label = "X turn"
+        if args.six_model is not None:
+            from six_model import gestures as six_gestures, load_model
+
+            detector = partial(six_gestures, estimator=load_model(args.six_model)["estimator"])
+            angle_label = "Rotation"
+        elif args.model is not None:
+            from roll_model import load_model
+
+            detector = partial(model_gestures, estimator=load_model(args.model)["estimator"])
         if args.replay is not None:
-            count = show(replayed(args.replay, args.realtime))
+            count = show(replayed(args.replay, args.realtime), detector, angle_label=angle_label)
         else:
             if not args.allow_mac_bond:
                 parser.error("Live mode needs --allow-mac-bond.")
@@ -159,10 +191,17 @@ def main() -> int:
             captures.mkdir(exist_ok=True)
             folder = Path(tempfile.mkdtemp(prefix="live.", dir=captures))
             print(f"Saving raw motion to {folder}", flush=True)
-            print("Hold thumb-up and still until the first gesture prompt. Ctrl-C to stop.", flush=True)
+            if args.six_model is not None:
+                print("Six-gesture model ready. Wait for live R21 data. Ctrl-C to stop.", flush=True)
+            elif args.model is None:
+                print("Hold thumb-up and still for calibration. Ctrl-C to stop.", flush=True)
+            else:
+                print("Roll model ready. Wait for live R21 data before testing. Ctrl-C to stop.", flush=True)
             with strap(args.device) as lines:
-                count = show(saved(lines, folder / "motion.csv"))
-    except (OSError, ValueError, KeyError) as error:
+                count = show(saved(lines, folder / "motion.csv"), detector, angle_label=angle_label)
+    except ModuleNotFoundError as error:
+        parser.exit(1, f"Model dependency missing: {error.name}. Use Python with scikit-learn and joblib.\n")
+    except (OSError, ValueError, KeyError, EOFError) as error:
         parser.exit(1, f"Could not read motion: {error}\n")
     print(f"Detected {count} gestures.")
     return 0
