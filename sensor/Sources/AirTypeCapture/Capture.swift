@@ -6,9 +6,27 @@ func report(_ message: String) {
 }
 
 final class Capture: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
-    enum Mode {
+    enum Mode: Equatable {
         case discover
-        case capture(UUID, seconds: Int)
+        /// `seconds` bounds the recording after the first frame. `nil` streams until stopped.
+        case capture(UUID, seconds: Int?)
+
+        init?(arguments args: [String]) {
+            switch args.first {
+            case "discover" where args.count == 1:
+                self = .discover
+            case "capture" where args.count == 3 || args.count == 4:
+                let seconds = args.count == 4 ? Int(args[3]) : 20
+                guard let id = UUID(uuidString: args[1]), args[2] == "--allow-mac-bond",
+                      let seconds, (5...60).contains(seconds) else { return nil }
+                self = .capture(id, seconds: seconds)
+            case "stream" where args.count == 3:
+                guard let id = UUID(uuidString: args[1]), args[2] == "--allow-mac-bond" else { return nil }
+                self = .capture(id, seconds: nil)
+            default:
+                return nil
+            }
+        }
     }
 
     private enum Phase: String {
@@ -241,8 +259,10 @@ final class Capture: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             }
         }
         if frames == 0, case .capture(_, let seconds) = mode {
+            // A stream has no deadline. The five-second silence watchdog below still ends it.
             advance(to: .streaming, timeout: seconds)
-            report("Received live R21 data. Recording for \(seconds) seconds.")
+            report(seconds.map { "Received live R21 data. Recording for \($0) seconds." }
+                   ?? "Received live R21 data. Streaming until stopped (Ctrl-C).")
         }
         silence?.cancel()
         let silence = DispatchWorkItem { [weak self] in
@@ -284,9 +304,11 @@ final class Capture: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         send(82, arguments: [1], phase: .stopRaw)
     }
 
-    private func advance(to next: Phase, timeout: Int = 8) {
+    private func advance(to next: Phase, timeout: Int? = 8) {
         deadline?.cancel()
+        deadline = nil
         phase = next
+        guard let timeout else { return }
         let work = DispatchWorkItem { [weak self] in self?.timedOut() }
         deadline = work
         DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(timeout), execute: work)

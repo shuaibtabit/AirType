@@ -4,29 +4,20 @@ let usage = """
 Usage:
   airtype-capture discover
   airtype-capture capture <macOS-device-UUID> --allow-mac-bond [seconds]
+  airtype-capture stream <macOS-device-UUID> --allow-mac-bond
 
-Discover scans without connecting. Capture writes to the selected strap, and macOS
-may attempt to bond. Only run capture after accepting that the phone may need to
-be paired again. Duration is 5–60 seconds (default 20) after the first frame.
+Discover scans without connecting. Capture and stream write to the selected strap,
+and macOS may attempt to bond. Only run them after accepting that the phone may
+need to be paired again. Capture lasts 5–60 seconds (default 20) after the first
+frame. Stream runs until Ctrl-C, or until the strap is silent for five seconds.
 """
 
 let args = Array(CommandLine.arguments.dropFirst())
-let mode: Capture.Mode
-switch args.first {
-case nil, "help", "--help", "-h":
+if args.isEmpty || ["help", "--help", "-h"].contains(args[0]) {
     print(usage)
     exit(0)
-case "discover" where args.count == 1:
-    mode = .discover
-case "capture" where args.count == 3 || args.count == 4:
-    let seconds = args.count == 4 ? Int(args[3]) : 20
-    guard let id = UUID(uuidString: args[1]), args[2] == "--allow-mac-bond",
-          let seconds, (5...60).contains(seconds) else {
-        report(usage)
-        exit(64)
-    }
-    mode = .capture(id, seconds: seconds)
-default:
+}
+guard let mode = Capture.Mode(arguments: args) else {
     report(usage)
     exit(64)
 }
