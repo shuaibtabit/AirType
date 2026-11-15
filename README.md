@@ -31,7 +31,19 @@ The overlay currently uses a short pause between words and a longer pause to fin
 python -B ml/live.py '<UUID from discovery>' --allow-mac-bond --six-model models/six-model.joblib
 ```
 
-The [standalone continuous decoder](app/README.md) infers spaces without a pause between words and supports optional Gemini phrase ranking. Its inferred boundaries are still separate from the live overlay.
+The [demo modes](app/README.md) include rehearsed phrase shortcuts and an experimental three-letter prefix decoder with optional OpenAI sentence suggestions.
+
+## Speech
+
+`--speak` says each finished sentence aloud with Deepgram, on the Mac's current audio output (AirPods when connected and selected in System Settings → Sound). It sends the sentence to Deepgram. Store the key once in the macOS Keychain, with a hidden prompt, and nothing else is needed:
+
+```sh
+python3 -B app/speak.py --save-key      # once; paste the key at the hidden prompt
+python3 -B app/speak.py "hello"        # quick check
+python -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --always-on --no-typing --speak
+```
+
+The `DEEPGRAM_API_KEY` environment variable also works. Never put the key in a file in the repository. From code, call `speak_in_background(text)` from `app/speak.py`.
 
 ## What has been verified
 
@@ -93,6 +105,6 @@ The CSV has one row per paired sample. It preserves strap Unix seconds and fract
 - `sensor/` holds the capture executable and protocol tests.
 - `research/` holds the source audit, firmware evidence, and local checkout locations.
 - `ml/` contains the prompted recorder, training, evaluation, and live gesture readout.
-- `app/` contains the live demo and standalone continuous decoder.
+- `app/` contains the live demo.
 - `models/` holds the two fitted gesture models.
 - [PLAN.md](PLAN.md) tracks milestones and evidence.

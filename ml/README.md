@@ -74,7 +74,3 @@ arm position, false commands in reviewed background intervals, and exact mixed
 sequences. Review commands from unlabeled intervals before interpreting the
 result. For the shared model, use `models/six-model.joblib` in live or replay mode.
 Install [the tested ML dependency versions](requirements.txt). Load models you trust.
-
-## Decoder interface
-
-Current text design is one gesture per letter group with automatically inferred spaces, not gesture pairs. The classifier should emit one event label for each intended letter position, preserving repeated gestures. app/t9_decoder.py accepts group IDs or exact gesture names. Keep unknown/rejected events explicit so the UI can request correction; do not silently delete letter positions. Final groups and the live adapter remain to be selected. See [the decoder guide](../app/README.md).

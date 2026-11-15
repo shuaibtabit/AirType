@@ -1,2 +1,0 @@
-{"gestures":["roll_out","tilt_down","roll_out","tilt_down","tilt_down","roll_out"],"expected":"go home","context":""}
-{"gestures":[3,1,4],"expected":"i am","context":""}

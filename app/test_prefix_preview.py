@@ -9,8 +9,8 @@ WORDS = ["send", "show", "email", "to"]
 
 
 class PrefixPreviewTests(unittest.TestCase):
-    def enter(self, words, *, gemini=False):
-        session = PrefixSession(load_layout(), WORDS, use_gemini=gemini)
+    def enter(self, words, *, openai_key=None):
+        session = PrefixSession(load_layout(), WORDS, openai_key=openai_key)
         code = [label for word in words for label in session.lexicon.code_of(word[:3])]
         for i, label in enumerate(code):
             t = i * 3.5
@@ -25,12 +25,19 @@ class PrefixPreviewTests(unittest.TestCase):
         self.assertIn("show email to", actions[0].detail.splitlines())
 
     def test_unmatched_input_requests_retry(self):
-        self.assertEqual(self.enter(["zzz"]), [Show("Try again", "No dictionary phrase matches those groups.")])
+        self.assertEqual(self.enter(["zzz"]), [Show("Try again", "No supported phrase matches those groups.")])
 
-    def test_optional_ranker_receives_only_dictionary_candidates(self):
-        def rank(result, **kwargs):
-            self.assertEqual({c["text"] for c in result["candidates"]}, {"send email", "show email"})
-            self.assertIn('"groups"', kwargs["context"])
-            return dict(result, source="gemini_decision")
-        with patch("prefix_preview.gemini_rank", side_effect=rank):
-            self.assertEqual(self.enter(["send", "email"], gemini=True)[0].status, "Gemini suggestions")
+    def test_full_sequence_and_dictionary_candidates_reach_openai(self):
+        with patch("prefix_preview.suggest_sentence", return_value="Send email.") as decode:
+            result = self.enter(["send", "email"], openai_key="mock-key")
+        self.assertEqual(result, [Show("OpenAI suggestion", "Send email.")])
+        _, groups, mapping, candidates, vocabulary, _ = decode.call_args.args
+        self.assertEqual(groups, list("524241"))
+        self.assertEqual(mapping["5"]["letters"], "qrst")
+        self.assertEqual(set(candidates), {"send email", "show email"})
+        self.assertIn("send", vocabulary)
+
+    def test_unsupported_openai_guess_keeps_dictionary_candidates(self):
+        with patch("prefix_preview.suggest_sentence", return_value="Completely unrelated suggestion."):
+            self.assertEqual(self.enter(["send", "email"], openai_key="mock-key")[0].status,
+                             "Dictionary fallback")

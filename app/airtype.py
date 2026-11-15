@@ -51,7 +51,7 @@ class Screen:
     def apply(self, actions: Iterable[Action]) -> None:
         for action in actions:
             if isinstance(action, Show):
-                if action.status == "Decoded" and self.speaker is not None:
+                if action.status in ("Decoded", "OpenAI suggestion") and self.speaker is not None:
                     print("[Speech] Sending phrase to the selected audio output", flush=True)
                     self._send({"status": "Speech", "detail": "Sending phrase to audio output"})
                     self.speaker.speak(action.detail)
@@ -64,6 +64,8 @@ class Screen:
                 print(f"TYPE: {action.text!r}", flush=True)
                 if self.typing:
                     self._send({"type": action.text})
+                if self.speaker is not None and action.text.strip():
+                    self.speaker.speak(action.text)
 
     def _send(self, message: dict) -> None:
         if self.overlay is None or self.overlay.poll() is not None:
@@ -195,39 +197,43 @@ def main() -> int:
                        help="Decode rehearsed abbreviated phrases")
     modes.add_argument("--prefix-preview", action="store_true",
                        help="Preview dictionary phrases from the first three letters of each word")
-    parser.add_argument("--prefix-gemini", action="store_true",
-                        help="Let Gemini rank prefix-preview candidates (requires GEMINI_API_KEY)")
-    parser.add_argument("--phrase-gemini", action="store_true",
-                        help="Use Gemini to rank tied phrase-demo matches (requires GEMINI_API_KEY)")
+    parser.add_argument("--prefix-openai", action="store_true",
+                        help="Use OpenAI to decode the whole prefix gesture string")
+    parser.add_argument("--prefix-context", default="", help="Optional context and likely demo words for OpenAI")
+    parser.add_argument("--speak", action="store_true",
+                        help="Speak completed sentences with Deepgram (environment or Keychain key)")
     parser.add_argument("--phrase-output", choices=("preview", "type", "speak"), default="preview",
                         help="Display, type into the focused app, or speak a decoded demo phrase")
     parser.add_argument("--speech-backend", choices=("macos", "deepgram"), default="macos",
                         help="Speech provider for --phrase-output speak")
     args = parser.parse_args()
     continuous_preview = args.phrase_demo or args.prefix_preview
-    if args.prefix_gemini and not args.prefix_preview:
-        parser.error("--prefix-gemini requires --prefix-preview.")
-    if args.prefix_gemini and not os.environ.get("GEMINI_API_KEY", "").strip():
-        parser.error("--prefix-gemini requires GEMINI_API_KEY in the environment.")
-    if args.prefix_preview and args.llm:
-        parser.error("Use --prefix-gemini for the prefix preview.")
+    if args.prefix_openai and not args.prefix_preview:
+        parser.error("--prefix-openai requires --prefix-preview.")
+    if args.prefix_context and not args.prefix_openai:
+        parser.error("--prefix-context requires --prefix-openai.")
+    openai_key = os.environ.get("OPENAI_API_KEY", "").strip() if args.prefix_openai else None
+    if args.prefix_openai and not openai_key:
+        parser.error("--prefix-openai requires OPENAI_API_KEY in the environment.")
+    if continuous_preview and args.llm:
+        parser.error("Use --prefix-preview --prefix-openai for experimental sentence decoding.")
     if args.phrase_output != "preview" and not args.phrase_demo:
         parser.error("--phrase-output requires --phrase-demo.")
     if args.phrase_output == "type" and (args.no_overlay or args.no_typing):
         parser.error("Typing phrases requires the overlay and cannot use --no-typing.")
-    if args.speech_backend == "deepgram" and args.phrase_output != "speak":
-        parser.error("--speech-backend deepgram requires --phrase-output speak.")
+    if args.speak and args.phrase_output == "type":
+        parser.error("Choose typing or --speak for the phrase demo.")
+    if args.prefix_preview and args.speak and not args.prefix_openai:
+        parser.error("Speaking a prefix suggestion requires --prefix-openai.")
+    speaking = args.speak or args.phrase_output == "speak"
+    if args.speech_backend == "deepgram" and not speaking:
+        parser.error("--speech-backend deepgram requires --speak or --phrase-output speak.")
     speech_key = None
-    if args.speech_backend == "deepgram":
-        speech_key = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+    if args.speech_backend == "deepgram" or args.speak:
+        from speak import find_key
+        speech_key = find_key()
         if not speech_key:
-            parser.error("--speech-backend deepgram requires DEEPGRAM_API_KEY.")
-    if args.phrase_gemini and not args.phrase_demo:
-        parser.error("--phrase-gemini requires --phrase-demo.")
-    if args.phrase_gemini and not os.environ.get("GEMINI_API_KEY", "").strip():
-        parser.error("--phrase-gemini requires GEMINI_API_KEY in the environment.")
-    if args.phrase_demo and args.llm:
-        parser.error("Use --phrase-gemini for the phrase demo.")
+            parser.error("Deepgram needs a key. Run python3 -B app/speak.py --save-key or set DEEPGRAM_API_KEY.")
     if sum([args.device is not None, args.replay is not None, args.keys]) != 1:
         parser.error("Choose one: a device UUID, --replay with a motion.csv, or --keys.")
 
@@ -241,10 +247,11 @@ def main() -> int:
     layout = load_layout()
     if args.phrase_demo:
         from phrase_demo import PhraseSession
-        session = PhraseSession(layout, sentence_gap=args.sentence_gap, use_gemini=args.phrase_gemini)
+        session = PhraseSession(layout, sentence_gap=args.sentence_gap)
     elif args.prefix_preview:
         from prefix_preview import PrefixSession
-        session = PrefixSession(layout, load_words(), sentence_gap=args.sentence_gap, use_gemini=args.prefix_gemini)
+        session = PrefixSession(layout, load_words(), sentence_gap=args.sentence_gap,
+                                openai_key=openai_key, context=args.prefix_context)
     else:
         session = Session(Lexicon(load_words(), layout), word_gap=args.word_gap, sentence_gap=args.sentence_gap,
                           always_on=args.always_on or args.keys, choose=choose)
@@ -255,7 +262,7 @@ def main() -> int:
             parser.error("Run swift build in AirType first, or pass --no-overlay.")
         overlay = subprocess.Popen([str(OVERLAY)], stdin=subprocess.PIPE, text=True)
     speaker = None
-    if args.phrase_output == "speak":
+    if speaking:
         from speech import Speaker
         speaker = Speaker(deepgram_key=speech_key)
     typing = args.phrase_output == "type" or not (args.no_typing or continuous_preview)

@@ -1,11 +1,9 @@
 """Expand spoken-language shortcuts from the detector's existing gesture groups."""
 
-import json
 import math
 
 from decoder import Lexicon
 from session import Session, Show
-from t9_decoder import gemini_rank
 
 PHRASES = (
     ("hnse", "Hey, my name is Shuaib. I am excited."),
@@ -28,15 +26,13 @@ def edit_distance(first, second):
 class PhraseSession(Session):
     """Collect a single gesture buffer and display the decoded phrase."""
 
-    def __init__(self, layout, *, sentence_gap=6.0, use_gemini=False):
+    def __init__(self, layout, *, sentence_gap=6.0):
         super().__init__(Lexicon([], layout), word_gap=math.inf,
                          sentence_gap=sentence_gap, always_on=True)
-        self.layout = layout
         self.digit = {label: str(i) for i, label in enumerate(layout, start=1)}
         self.codes = [(self.lexicon.code_of(shortcut), phrase) for shortcut, phrase in PHRASES]
         if any(not code for code, _ in self.codes):
             raise ValueError("A phrase shortcut contains a letter outside the layout.")
-        self.use_gemini = use_gemini
 
     def ready(self):
         return [Show("Listening", "Enter an abbreviated phrase")]
@@ -68,17 +64,4 @@ class PhraseSession(Session):
         matches = [phrase for distance, phrase in scores if distance == best]
         if len(matches) == 1:
             return [Show("Decoded", matches[0])]
-        if self.use_gemini:
-            context = json.dumps({
-                "observed_t9_digits": digits,
-                "letter_groups": {self.digit[label]: letters for label, letters in self.layout.items()},
-            })
-            result = gemini_rank({
-                "status": "uncertain",
-                "source": "shortcut_matching",
-                "candidates": [{"id": f"p{i}", "text": phrase, "log_score": -best}
-                               for i, phrase in enumerate(matches)],
-            }, context=context)
-            if result["source"] == "gemini_decision" and result["status"] == "ok":
-                return [Show("Decoded", result["candidates"][0]["text"])]
         return [Show("Try again", f"Gesture code {digits} matches more than one phrase")]

@@ -1,32 +1,10 @@
-"""Speak completed demo phrases on the Mac's selected audio output."""
+"""Speak completed demo phrases, using the shared Deepgram client when requested."""
 
-import json
 import subprocess
 import sys
-import tempfile
 import threading
-import urllib.request
-from pathlib import Path
 
-SPEAK_URL = "https://api.deepgram.com/v1/speak?model=aura-2-thalia-en&encoding=linear16&container=wav"
-MAX_AUDIO_BYTES = 4 * 1024 * 1024
-
-
-def deepgram_speak(text, key):
-    request = urllib.request.Request(
-        SPEAK_URL,
-        data=json.dumps({"text": text}).encode("utf-8"),
-        headers={"Authorization": "Token " + key, "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=8) as response:
-        audio = response.read(MAX_AUDIO_BYTES + 1)
-    if len(audio) > MAX_AUDIO_BYTES or audio[:4] != b"RIFF" or audio[8:12] != b"WAVE":
-        raise ValueError("Deepgram returned invalid WAV audio.")
-    with tempfile.TemporaryDirectory(prefix="airtype-speech.") as folder:
-        path = Path(folder) / "phrase.wav"
-        path.write_bytes(audio)
-        subprocess.run(["/usr/bin/afplay", str(path)], check=True, timeout=20)
+from speak import speak as deepgram_speak
 
 
 class Speaker:
@@ -43,11 +21,9 @@ class Speaker:
 
     def _speak(self, text):
         if self.deepgram_key:
-            try:
-                deepgram_speak(text, self.deepgram_key)
+            if deepgram_speak(text, self.deepgram_key):
                 return
-            except (OSError, ValueError, subprocess.SubprocessError):
-                print("Deepgram speech failed. Using the Mac voice.", file=sys.stderr, flush=True)
+            print("Using the Mac voice instead.", file=sys.stderr, flush=True)
         try:
             subprocess.run(["/usr/bin/say", text], check=True, timeout=20)
         except (OSError, subprocess.SubprocessError) as error:

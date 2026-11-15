@@ -28,21 +28,13 @@ movements. The first live rehearsal produced 32 calls with zero framing
 rejects. Repeated tilt-up remains unreliable. Check repeat handling, false
 triggers, and delay in a live sentence rehearsal before expanding the demo.
 
-## 4. Decode continuous six-group predictive text
-
-The two-gesture character design is superseded. One gesture supplies one letter group; dictionary paths infer word boundaries from a continuous stream. Final letter groups are not selected. The initial decoder in app/t9_decoder.py uses a dictionary lattice and unigram beam, with optional Gemini Decision ranking of valid phrase candidates. See app/README.md for setup, interfaces and evaluation.
-
-Target: the intended word is the first suggestion 80–90% of the time, not merely in the top three. This is unvalidated. Measure aligned word accuracy, WER, phrase accuracy, candidate coverage, latency and real wearer acceptance on held-out phrases. Evaluate correct gesture streams separately from recorded classifier output.
-
-## 5. Rehearse live text and integrate inferred spaces
+## 4. Rehearse live text
 
 The local overlay consumes live gesture events and currently uses word pauses.
 Replay and keyboard tests exercised the text path. Rehearse a live phrase with
 the overlay in preview mode. Verify explicit finish, correction, and typing
-permissions before sending text to another app. Integrate the continuous
-decoder with the live event buffer so the wearer can enter phrases without
-marking spaces.
+permissions before sending text to another app.
 
-## 6. Connect suggestions to the site
+## 5. Connect suggestions to the site
 
-Display the raw gesture stream and ranked phrases. Allow backspace, alternatives, cancel, utterance finish and explicit confirmation. Word boundaries are inferred; there is no first/second-input pairing state. Preserve corrections and abstentions in evaluation logs. Agent actions remain outside this prototype.
+Display the raw gesture stream and ranked phrases. Allow backspace, alternatives, cancel, utterance finish and explicit confirmation. Word boundaries come from pauses. Preserve corrections and abstentions in evaluation logs. Agent actions remain outside this prototype.

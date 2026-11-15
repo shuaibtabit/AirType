@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 
 from decoder import load_layout
 from phrase_demo import PHRASES, PhraseSession
@@ -7,9 +6,9 @@ from session import Show
 
 
 class PhraseDemoTests(unittest.TestCase):
-    def enter(self, digits, *, use_gemini=False):
+    def enter(self, digits):
         layout = load_layout()
-        session = PhraseSession(layout, use_gemini=use_gemini)
+        session = PhraseSession(layout)
         for i, digit in enumerate(digits):
             # Deliberately exceed a legacy word pause while staying within a phrase.
             t = i * 3.5
@@ -28,14 +27,6 @@ class PhraseDemoTests(unittest.TestCase):
         self.assertEqual(self.enter('242')[0].status, 'Try again')
         self.assertEqual(self.enter('6666')[0].status, 'Try again')
 
-    def test_optional_gemini_only_sees_tied_candidates(self):
-        with patch('phrase_demo.gemini_rank') as rank:
-            self.enter('2452', use_gemini=True)
-            rank.assert_not_called()
-            rank.side_effect = lambda result, **kwargs: dict(
-                result, source='gemini_decision', status='ok', candidates=result['candidates'][::-1])
-            self.assertEqual(self.enter('242', use_gemini=True), [Show('Decoded', PHRASES[1][1])])
-            self.assertIn('"observed_t9_digits": "242"', rank.call_args.kwargs['context'])
 
 
 class PhraseOutputTests(unittest.TestCase):
