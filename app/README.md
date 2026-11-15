@@ -10,6 +10,66 @@ decoder from [decoder.py](decoder.py). For the run commands and test status,
 see [the main README](../README.md). The continuous decoder below is a separate
 prototype.
 
+## Abbreviated phrase demo
+
+For a controlled demonstration, `--phrase-demo` displays a whole phrase from
+a short keyword code. It listens continuously and finishes after six seconds
+of silence. It uses preset candidate phrases.
+
+| Shortcut | Group keys | Gesture order | Display |
+| --- | --- | --- | --- |
+| H N S E | `2452` | Roll out → tilt down → swing left → roll out | Hey, my name is Shuaib. I am excited. |
+| S E P E | `5242` | Swing left → roll out → tilt down → roll out | Send email to prof asking for extension. |
+| W K D R | `6315` | Swing right → tilt up → roll in → swing left | Please walk to the door. |
+
+```sh
+printf '2452\n5242\nq\n' | python3 -B app/airtype.py --keys --phrase-demo --no-overlay
+python3 -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --phrase-demo
+```
+
+The gesture groups come from `app/layout.json`. An exact match displays its
+phrase. A unique match within one extra, missing, or substituted gesture
+also displays its phrase. A tie or a larger mismatch asks for a retry.
+Optional `--phrase-gemini` sends tied candidates and the observed gesture code
+to Gemini for ranking. It needs `GEMINI_API_KEY`; the local demo needs no API key.
+The default mode displays text. For a Doc demo, open a blank Google Doc and
+place the cursor in the document body after starting AirType. Grant Accessibility
+permission to the Terminal or app launching AirType for typing.
+
+```sh
+python3 -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --phrase-demo --phrase-output type
+```
+
+For an audio demo, connect your friend's AirPods to the WHOOP Mac and select
+them under System Settings → Sound → Output. Rehearse the audio locally before
+walking across the room. This mode leaves the decoded phrase off the screen.
+
+```sh
+python3 -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --phrase-demo --phrase-output speak --no-overlay
+```
+
+The audio demo uses the Mac voice by default. Optional `--speech-backend deepgram`
+requires `DEEPGRAM_API_KEY` and sends the decoded text to Deepgram. On request
+failure, the app falls back to the Mac voice. The sentences are output only;
+AirType does not send an email or run an agent workflow.
+
+## Experimental three-letter prefix preview
+
+Enter the first three letters of each word through their gesture groups.
+For words shorter than three letters, enter the whole word. The decoder
+uses `app/words.txt` and infers word boundaries across the gesture sequence.
+Six seconds of silence ends the phrase. Results are suggestions on screen.
+
+```sh
+printf '524241\nq\n' | python3 -B app/airtype.py --keys --prefix-preview --no-overlay
+python3 -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --prefix-preview
+```
+
+The example uses `sen ema` and offers both “send email” and “show email.”
+Local ranking uses the word list order. Optional `--prefix-gemini` needs
+`GEMINI_API_KEY` and sends the dictionary candidates and group sequence to
+Gemini for ranking. The word list defines the available vocabulary.
+
 ## Run the prototype
 
 No dependencies or API key are needed for this small local software demo:

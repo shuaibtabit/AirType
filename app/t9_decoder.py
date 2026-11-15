@@ -20,7 +20,9 @@ MODEL = "gemini-decision-1"
 class Decoder:
     """Exact dictionary lattice + bounded unigram beam. No sensor or pair handling."""
 
-    def __init__(self, mapping, entries):
+    def __init__(self, mapping, entries, *, prefix_length=None):
+        if prefix_length is not None and (type(prefix_length) is not int or prefix_length < 1):
+            raise ValueError("Prefix length must be a positive integer.")
         groups = mapping["groups"]
         if not isinstance(groups, dict) or not groups:
             raise ValueError("Mapping needs nonempty groups.")
@@ -61,11 +63,11 @@ class Decoder:
         self.word_scores = {word: score - normalizer for word, score in logs.items()}
         self.index = {}
         for word in weights:
-            self.index.setdefault(self.encode(word), []).append(word)
+            self.index.setdefault(self.encode(word)[:prefix_length], []).append(word)
         for words in self.index.values():
             words.sort(key=lambda word: (-self.word_scores[word], word))
         self.prefixes = {code[:i] for code in self.index for i in range(1, len(code) + 1)}
-        self.max_word_length = max(map(len, weights))
+        self.max_word_length = max(map(len, self.index))
 
     @classmethod
     def load(cls, mapping_path, lexicon_path):
@@ -108,7 +110,7 @@ class Decoder:
         if not tokens:
             return dict(base, status="empty", candidates=[], beam_pruned=False)
 
-        # Each edge is one dictionary word consuming exactly its encoded letters.
+        # Each edge consumes the encoded letters or prefix of one dictionary word.
         # Word boundaries are inferred; no input pauses are needed.
         lattice = [[] for _ in range(len(tokens))]
         for start in range(len(tokens)):

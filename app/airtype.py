@@ -41,15 +41,25 @@ KEY_HELP = "Keys: 1-6 = gestures in layout order, space = next word, Enter = typ
 class Screen:
     """Mirror every update to the terminal, and to the floating overlay when it is running."""
 
-    def __init__(self, overlay: Optional[subprocess.Popen], typing: bool) -> None:
+    def __init__(self, overlay: Optional[subprocess.Popen], typing: bool,
+                 *, phrase_output: str = "preview", speaker=None) -> None:
         self.overlay = overlay
         self.typing = typing
+        self.phrase_output = phrase_output
+        self.speaker = speaker
 
     def apply(self, actions: Iterable[Action]) -> None:
         for action in actions:
             if isinstance(action, Show):
+                if action.status == "Decoded" and self.speaker is not None:
+                    print("[Speech] Sending phrase to the selected audio output", flush=True)
+                    self._send({"status": "Speech", "detail": "Sending phrase to audio output"})
+                    self.speaker.speak(action.detail)
+                    continue
                 print(f"[{action.status}] {action.detail}", flush=True)
                 self._send({"status": action.status, "detail": action.detail})
+                if action.status == "Decoded" and self.phrase_output == "type":
+                    self._send({"type": action.detail + " "})
             elif isinstance(action, TypeText):
                 print(f"TYPE: {action.text!r}", flush=True)
                 if self.typing:
@@ -102,20 +112,21 @@ def llm_chooser(api_key: str):
     return choose
 
 
-def pump_gestures(lines: Iterable[str], detector, events: queue.Queue) -> None:
+def pump_gestures(lines: Iterable[str], detector, events: queue.Queue, use_taps: bool = True) -> None:
     """Background thread: raw CSV lines → double taps and classified gestures."""
     try:
-        tapped = double_taps(lines, lambda _: events.put(("tap", None)))
-        for event in detector(tapped):
+        if use_taps:
+            lines = double_taps(lines, lambda _: events.put(("tap", None)))
+        for event in detector(lines):
             events.put(("gesture", event))
         events.put(("end", None))
     except Exception as error:  # surfaced on the main thread
         events.put(("error", error))
 
 
-def run_stream(lines: Iterable[str], detector, session: Session, screen: Screen) -> None:
+def run_stream(lines: Iterable[str], detector, session: Session, screen: Screen, *, use_taps: bool = True) -> None:
     events: queue.Queue = queue.Queue()
-    threading.Thread(target=pump_gestures, args=(lines, detector, events), daemon=True).start()
+    threading.Thread(target=pump_gestures, args=(lines, detector, events, use_taps), daemon=True).start()
     screen.apply(session.ready())
     while True:
         try:
@@ -137,9 +148,10 @@ def run_stream(lines: Iterable[str], detector, session: Session, screen: Screen)
             return
 
 
-def run_keys(session: Session, screen: Screen, gestures: List[str], lines: Iterator[str]) -> None:
+def run_keys(session: Session, screen: Screen, gestures: List[str], lines: Iterator[str],
+             *, word_pauses: bool = True) -> None:
     """Keyboard stand-in for the strap. Each line is a batch of keys; see KEY_HELP."""
-    print(KEY_HELP, flush=True)
+    print(KEY_HELP if word_pauses else "Keys: 1-6 = gesture groups, Enter = decode, q = quit.", flush=True)
     print("Layout: " + "  ".join(f"{i}={label}" for i, label in enumerate(gestures, start=1)), flush=True)
     screen.apply(session.ready())
     clock = 0.0
@@ -149,7 +161,7 @@ def run_keys(session: Session, screen: Screen, gestures: List[str], lines: Itera
                 return
             if key == "t":
                 screen.apply(session.on_double_tap(clock))
-            elif key == " ":
+            elif key == " " and word_pauses:
                 clock += session.word_gap + 1
             elif key == "\n":
                 # Give you three seconds to click into the target app before typing.
@@ -178,7 +190,44 @@ def main() -> int:
     parser.add_argument("--llm", action="store_true",
                         help="Let Claude choose between candidate words. Needs ANTHROPIC_API_KEY and "
                              "sends the candidate words to Anthropic.")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--phrase-demo", action="store_true",
+                       help="Decode rehearsed abbreviated phrases")
+    modes.add_argument("--prefix-preview", action="store_true",
+                       help="Preview dictionary phrases from the first three letters of each word")
+    parser.add_argument("--prefix-gemini", action="store_true",
+                        help="Let Gemini rank prefix-preview candidates (requires GEMINI_API_KEY)")
+    parser.add_argument("--phrase-gemini", action="store_true",
+                        help="Use Gemini to rank tied phrase-demo matches (requires GEMINI_API_KEY)")
+    parser.add_argument("--phrase-output", choices=("preview", "type", "speak"), default="preview",
+                        help="Display, type into the focused app, or speak a decoded demo phrase")
+    parser.add_argument("--speech-backend", choices=("macos", "deepgram"), default="macos",
+                        help="Speech provider for --phrase-output speak")
     args = parser.parse_args()
+    continuous_preview = args.phrase_demo or args.prefix_preview
+    if args.prefix_gemini and not args.prefix_preview:
+        parser.error("--prefix-gemini requires --prefix-preview.")
+    if args.prefix_gemini and not os.environ.get("GEMINI_API_KEY", "").strip():
+        parser.error("--prefix-gemini requires GEMINI_API_KEY in the environment.")
+    if args.prefix_preview and args.llm:
+        parser.error("Use --prefix-gemini for the prefix preview.")
+    if args.phrase_output != "preview" and not args.phrase_demo:
+        parser.error("--phrase-output requires --phrase-demo.")
+    if args.phrase_output == "type" and (args.no_overlay or args.no_typing):
+        parser.error("Typing phrases requires the overlay and cannot use --no-typing.")
+    if args.speech_backend == "deepgram" and args.phrase_output != "speak":
+        parser.error("--speech-backend deepgram requires --phrase-output speak.")
+    speech_key = None
+    if args.speech_backend == "deepgram":
+        speech_key = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+        if not speech_key:
+            parser.error("--speech-backend deepgram requires DEEPGRAM_API_KEY.")
+    if args.phrase_gemini and not args.phrase_demo:
+        parser.error("--phrase-gemini requires --phrase-demo.")
+    if args.phrase_gemini and not os.environ.get("GEMINI_API_KEY", "").strip():
+        parser.error("--phrase-gemini requires GEMINI_API_KEY in the environment.")
+    if args.phrase_demo and args.llm:
+        parser.error("Use --phrase-gemini for the phrase demo.")
     if sum([args.device is not None, args.replay is not None, args.keys]) != 1:
         parser.error("Choose one: a device UUID, --replay with a motion.csv, or --keys.")
 
@@ -190,19 +239,32 @@ def main() -> int:
         choose = llm_chooser(api_key)
 
     layout = load_layout()
-    session = Session(Lexicon(load_words(), layout), word_gap=args.word_gap, sentence_gap=args.sentence_gap,
-                      always_on=args.always_on or args.keys, choose=choose)
+    if args.phrase_demo:
+        from phrase_demo import PhraseSession
+        session = PhraseSession(layout, sentence_gap=args.sentence_gap, use_gemini=args.phrase_gemini)
+    elif args.prefix_preview:
+        from prefix_preview import PrefixSession
+        session = PrefixSession(layout, load_words(), sentence_gap=args.sentence_gap, use_gemini=args.prefix_gemini)
+    else:
+        session = Session(Lexicon(load_words(), layout), word_gap=args.word_gap, sentence_gap=args.sentence_gap,
+                          always_on=args.always_on or args.keys, choose=choose)
 
     overlay = None
     if not args.no_overlay:
         if not OVERLAY.is_file():
             parser.error("Run swift build in AirType first, or pass --no-overlay.")
         overlay = subprocess.Popen([str(OVERLAY)], stdin=subprocess.PIPE, text=True)
-    screen = Screen(overlay, typing=not args.no_typing)
+    speaker = None
+    if args.phrase_output == "speak":
+        from speech import Speaker
+        speaker = Speaker(deepgram_key=speech_key)
+    typing = args.phrase_output == "type" or not (args.no_typing or continuous_preview)
+    screen = Screen(overlay, typing=typing, phrase_output=args.phrase_output, speaker=speaker)
 
     try:
         if args.keys:
-            run_keys(session, screen, list(layout), iter(sys.stdin.readline, ""))
+            run_keys(session, screen, list(layout), iter(sys.stdin.readline, ""),
+                     word_pauses=not continuous_preview)
             return 0
         import live
         from functools import partial
@@ -210,7 +272,7 @@ def main() -> int:
 
         detector = partial(six_gestures, estimator=load_model(args.six_model)["estimator"])
         if args.replay is not None:
-            run_stream(live.replayed(args.replay, args.realtime), detector, session, screen)
+            run_stream(live.replayed(args.replay, args.realtime), detector, session, screen, use_taps=not continuous_preview)
         else:
             if not args.allow_mac_bond:
                 parser.error("Live mode needs --allow-mac-bond.")
@@ -219,7 +281,7 @@ def main() -> int:
             folder = Path(tempfile.mkdtemp(prefix="live.", dir=captures))
             print(f"Saving raw motion to {folder}. Ctrl-C to stop.", flush=True)
             with live.strap(args.device) as lines:
-                run_stream(live.saved(lines, folder / "motion.csv"), detector, session, screen)
+                run_stream(live.saved(lines, folder / "motion.csv"), detector, session, screen, use_taps=not continuous_preview)
     except KeyboardInterrupt:
         print("\nStopping.", flush=True)
     except ModuleNotFoundError as error:
