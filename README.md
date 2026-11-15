@@ -36,7 +36,7 @@ python -B ml/live.py '<UUID from discovery>' --allow-mac-bond --six-model models
 `--speak` says each finished sentence aloud with Deepgram, on the Mac's current audio output (AirPods when connected and selected in System Settings → Sound). It sends the sentence to Deepgram. Store the key once in the macOS Keychain, with a hidden prompt, and nothing else is needed:
 
 ```sh
-security add-generic-password -a "$USER" -s deepgram -w
+python3 -B app/speak.py --save-key      # once; paste the key at the hidden prompt
 python3 -B app/speak.py "hello"        # quick check
 python -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --always-on --no-typing --speak
 ```

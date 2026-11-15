@@ -4,7 +4,7 @@ work once they are connected and selected in System Settings > Sound.
   python3 -B app/speak.py "hello world"
 
 Needs a Deepgram key: the DEEPGRAM_API_KEY environment variable, or a macOS Keychain item
-named "deepgram" (store it once with: security add-generic-password -a "$USER" -s deepgram -w).
+named "deepgram" (store it once with: python3 -B app/speak.py --save-key).
 This sends the text to Deepgram.
 """
 
@@ -69,5 +69,14 @@ def speak_in_background(text: str, api_key: str = "") -> None:
     threading.Thread(target=speak, args=(text, api_key)).start()
 
 
+def save_key() -> int:
+    """Store the key in the Keychain once. `security` prompts for it with hidden input on this
+    terminal, so the key never appears in the command line or shell history. -U replaces an old one."""
+    return subprocess.run(["security", "add-generic-password", "-a", os.environ.get("USER", ""),
+                           "-s", "deepgram", "-U", "-w"]).returncode
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--save-key"]:
+        sys.exit(save_key())
     sys.exit(0 if speak(" ".join(sys.argv[1:])) else 1)
