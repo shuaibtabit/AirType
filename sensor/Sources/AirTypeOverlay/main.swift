@@ -10,16 +10,27 @@ func report(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }
 
-final class Overlay {
+private final class AirTypePanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+}
+
+final class Overlay: NSObject {
     private let panel: NSPanel
     private let status = NSTextField(labelWithString: "AirType")
     private let detail = NSTextField(wrappingLabelWithString: "Starting…")
+    private let inputButton = NSButton(title: "Start", target: nil, action: nil)
+    private let clearButton = NSButton(title: "Clear", target: nil, action: nil)
+    private var command = "disabled"
+    private let onAction: ((String) -> Void)?
+    private let stopButton = NSButton(title: "Disconnect", target: nil, action: nil)
 
-    init() {
-        let size = NSSize(width: 560, height: 120)
-        panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+    init(controls: Bool, onAction: ((String) -> Void)? = nil) {
+        self.onAction = onAction
+        let size = NSSize(width: 480, height: controls ? 170 : 120)
+        panel = AirTypePanel(contentRect: NSRect(origin: .zero, size: size),
                         styleMask: [.nonactivatingPanel, .hudWindow, .utilityWindow, .titled],
                         backing: .buffered, defer: false)
+        super.init()
         panel.title = "AirType"
         panel.level = .statusBar
         panel.isFloatingPanel = true
@@ -29,9 +40,27 @@ final class Overlay {
 
         status.font = .systemFont(ofSize: 24, weight: .bold)
         detail.font = .monospacedSystemFont(ofSize: 17, weight: .regular)
-        detail.textColor = .white
+        detail.textColor = .labelColor
         detail.maximumNumberOfLines = 3
         let stack = NSStackView(views: [status, detail])
+        if controls {
+            inputButton.target = self
+            inputButton.action = #selector(toggleInput)
+            clearButton.target = self
+            clearButton.action = #selector(clearInput)
+            inputButton.bezelStyle = .rounded
+            clearButton.bezelStyle = .rounded
+            let buttons = NSStackView(views: [inputButton, clearButton])
+            buttons.spacing = 8
+            if onAction != nil {
+                stopButton.target = self
+                stopButton.action = #selector(disconnect)
+                stopButton.bezelStyle = .rounded
+                buttons.addArrangedSubview(stopButton)
+            }
+            stack.addArrangedSubview(buttons)
+            showControl("disabled")
+        }
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -51,6 +80,43 @@ final class Overlay {
         }
         show(status: "AirType", detail: "Starting…")
         panel.orderFrontRegardless()
+    }
+
+    func showControl(_ action: String) {
+        command = action
+        if action == "start" { inputButton.title = "Start" }
+        if action == "finish" { inputButton.title = "Finish" }
+        inputButton.isEnabled = action == "start" || action == "finish"
+        clearButton.isEnabled = action == "finish"
+    }
+
+    @objc private func toggleInput() {
+        guard command == "start" || command == "finish" else { return }
+        send(command)
+    }
+
+    @objc private func clearInput() {
+        guard command == "finish" else { return }
+        send("clear")
+    }
+
+    @objc private func disconnect() {
+        stopButton.isEnabled = false
+        show(status: "Disconnecting", detail: "Stopping the WHOOP stream")
+        send("stop")
+    }
+
+    func close() {
+        panel.orderOut(nil)
+    }
+
+    private func send(_ action: String) {
+        showControl("disabled")
+        if let onAction {
+            onAction(action)
+            return
+        }
+        FileHandle.standardOutput.write(Data((action + "\n").utf8))
     }
 
     func show(status text: String, detail body: String) {
@@ -84,30 +150,41 @@ func type(_ text: String) {
     }
 }
 
-let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
-let overlay = Overlay()
-if !AXIsProcessTrusted() {
-    // Shows the system prompt once. Granting it is the user's decision.
+func requestTypingPermission() {
+    guard !AXIsProcessTrusted() else { return }
     let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
     _ = AXIsProcessTrustedWithOptions(prompt)
-    report("Typing needs Accessibility permission for this terminal. The panel still works without it.")
+    report("Typing needs macOS Accessibility permission for AirType or the terminal launching it.")
 }
 
-Thread.detachNewThread {
-    while let line = readLine() {
-        guard let data = line.data(using: .utf8),
-              let message = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
-            report("Ignored a malformed overlay message.")
-            continue
-        }
-        DispatchQueue.main.async {
-            if let status = message["status"] {
-                overlay.show(status: status, detail: message["detail"] ?? "")
-            }
-            if let text = message["type"] { type(text) }
-        }
+func apply(_ message: [String: String], to overlay: Overlay) {
+    if let status = message["status"] {
+        overlay.show(status: status, detail: message["detail"] ?? "")
     }
-    DispatchQueue.main.async { exit(0) }
+    if let action = message["control"] { overlay.showControl(action) }
+    if let text = message["type"] { type(text) }
 }
-app.run()
+
+let app = NSApplication.shared
+if Bundle.main.bundleURL.pathExtension == "app" {
+    let launcher = Launcher()
+    app.delegate = launcher
+    app.setActivationPolicy(.regular)
+    launcher.present()
+    withExtendedLifetime(launcher) { app.run() }
+} else {
+    app.setActivationPolicy(.accessory)
+    let overlay = Overlay(controls: CommandLine.arguments.contains("--controls"))
+    if CommandLine.arguments.contains("--typing") { requestTypingPermission() }
+    Thread.detachNewThread {
+        while let line = readLine() {
+            guard let message = try? JSONDecoder().decode([String: String].self, from: Data(line.utf8)) else {
+                report("Ignored a malformed overlay message.")
+                continue
+            }
+            DispatchQueue.main.async { apply(message, to: overlay) }
+        }
+        DispatchQueue.main.async { exit(0) }
+    }
+    app.run()
+}

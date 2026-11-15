@@ -65,3 +65,29 @@ class PhraseOutputTests(unittest.TestCase):
             self.assertNotIn('type', json.loads(overlay.stdin.write.call_args.args[0]))
             Screen(overlay, typing=True, phrase_output='type').apply([Show('Decoded', phrase)])
         self.assertEqual(json.loads(overlay.stdin.write.call_args.args[0]), {'type': phrase + ' '})
+
+    def test_prefix_can_type_and_speak_without_delivering_dictionary_fallback(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import json
+        from unittest.mock import Mock
+
+        from airtype import Screen
+
+        overlay = Mock()
+        overlay.poll.return_value = None
+        speaker = Mock()
+        screen = Screen(overlay, typing=True, phrase_output="both", speaker=speaker)
+        screen.audit = StringIO()
+        with redirect_stdout(StringIO()):
+            screen.apply([
+                Show("Listening", "Gesture code 24235"),
+                Show("Dictionary fallback", "go fire"),
+                Show("OpenAI suggestion", "Go first."),
+            ])
+
+        messages = [json.loads(call.args[0]) for call in overlay.stdin.write.call_args_list]
+        self.assertEqual([message["type"] for message in messages if "type" in message], ["Go first. "])
+        speaker.speak.assert_called_once_with("Go first.")
+        self.assertEqual(screen.audit.getvalue(),
+                         "Gesture code 24235\nDictionary fallback\nOpenAI suggestion\n")

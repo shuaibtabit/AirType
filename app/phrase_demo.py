@@ -23,6 +23,20 @@ def edit_distance(first, second):
     return previous[-1]
 
 
+def shortcut_codes(lexicon):
+    codes = [(lexicon.code_of(shortcut), phrase) for shortcut, phrase in PHRASES]
+    if any(not code for code, _ in codes):
+        raise ValueError("A phrase shortcut contains a letter outside the layout.")
+    return codes
+
+
+def closest_shortcuts(code, shortcuts):
+    """Return all closest shortcuts within one missing, extra, or changed gesture."""
+    scores = [(edit_distance(code, expected), phrase) for expected, phrase in shortcuts]
+    best = min((distance for distance, _ in scores), default=2)
+    return [phrase for distance, phrase in scores if distance == best and distance <= 1]
+
+
 class PhraseSession(Session):
     """Collect a single gesture buffer and display the decoded phrase."""
 
@@ -30,9 +44,7 @@ class PhraseSession(Session):
         super().__init__(Lexicon([], layout), word_gap=math.inf,
                          sentence_gap=sentence_gap, always_on=True)
         self.digit = {label: str(i) for i, label in enumerate(layout, start=1)}
-        self.codes = [(self.lexicon.code_of(shortcut), phrase) for shortcut, phrase in PHRASES]
-        if any(not code for code, _ in self.codes):
-            raise ValueError("A phrase shortcut contains a letter outside the layout.")
+        self.codes = shortcut_codes(self.lexicon)
 
     def ready(self):
         return [Show("Listening", "Enter an abbreviated phrase")]
@@ -57,11 +69,9 @@ class PhraseSession(Session):
         self.last_end = None
         self.last_heard = None
         digits = self._digits(code)
-        scores = [(edit_distance(code, expected), phrase) for expected, phrase in self.codes]
-        best = min(distance for distance, _ in scores)
-        if best > 1:
+        matches = closest_shortcuts(code, self.codes)
+        if not matches:
             return [Show("Try again", f"No phrase close to {digits}")]
-        matches = [phrase for distance, phrase in scores if distance == best]
         if len(matches) == 1:
             return [Show("Decoded", matches[0])]
         return [Show("Try again", f"Gesture code {digits} matches more than one phrase")]

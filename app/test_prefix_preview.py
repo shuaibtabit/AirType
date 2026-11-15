@@ -41,3 +41,26 @@ class PrefixPreviewTests(unittest.TestCase):
         with patch("prefix_preview.suggest_sentence", return_value="Completely unrelated suggestion."):
             self.assertEqual(self.enter(["send", "email"], openai_key="mock-key")[0].status,
                              "Dictionary fallback")
+
+    def test_automatic_session_routes_shortcuts_and_new_sentences(self):
+        layout = load_layout()
+        session = PrefixSession(layout, ["go", "first"], openai_key="mock-key", prefer_shortcuts=True)
+
+        def enter(digits):
+            for i, digit in enumerate(digits):
+                session.on_gesture(list(layout)[int(digit) - 1], i, i + .4, i)
+            return session.on_tick(len(digits) + 6)
+
+        intro = Show("Decoded", "Hey, my name is Shuaib. I am excited.")
+        extension = Show("Decoded", "Send email to prof asking for extension.")
+        with patch("prefix_preview.suggest_sentence", return_value="Go first.") as decode:
+            self.assertEqual(enter("2452"), [intro])
+            self.assertEqual(enter("452"), [intro])
+            self.assertEqual(enter("52642"), [extension])
+            decode.assert_not_called()
+
+            self.assertEqual(enter("24235"), [Show("OpenAI suggestion", "Go first.")])
+            self.assertEqual(decode.call_args.args[1], list("24235"))
+
+            self.assertEqual(enter("242")[0].status, "Try again")
+            self.assertEqual(decode.call_args.args[1], list("242"))

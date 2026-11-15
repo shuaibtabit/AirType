@@ -6,7 +6,7 @@ import re
 from decoder import Lexicon
 from session import Session, Show
 from prefix_decoder import Decoder
-from phrase_demo import edit_distance
+from phrase_demo import closest_shortcuts, edit_distance, shortcut_codes
 from openai_prefix import suggest_sentence
 
 PREFIX_LETTERS = 3
@@ -15,7 +15,7 @@ BEAM_SIZE = 32
 
 
 class PrefixSession(Session):
-    def __init__(self, layout, words, *, sentence_gap=6.0, openai_key=None, context=""):
+    def __init__(self, layout, words, *, sentence_gap=6.0, openai_key=None, context="", prefer_shortcuts=False):
         super().__init__(Lexicon([], layout), word_gap=math.inf,
                          sentence_gap=sentence_gap, always_on=True)
         self.digit = {label: str(i) for i, label in enumerate(layout, start=1)}
@@ -27,6 +27,7 @@ class PrefixSession(Session):
         self.words = words[:60]
         self.openai_key = openai_key
         self.context = context
+        self.shortcuts = shortcut_codes(self.lexicon) if prefer_shortcuts else []
 
     def ready(self):
         return [Show("Listening", "Enter up to three letters per word. Pause to finish the phrase.")]
@@ -49,9 +50,13 @@ class PrefixSession(Session):
     def _commit(self):
         if not self.current:
             return []
-        result = self.decoder.decode(self.current, beam_size=BEAM_SIZE, max_tokens=MAX_TOKENS)
+        code = tuple(self.current)
         self.current.clear()
         self.last_end = self.last_heard = None
+        matches = closest_shortcuts(code, self.shortcuts)
+        if len(matches) == 1:
+            return [Show("Decoded", matches[0])]
+        result = self.decoder.decode(code, beam_size=BEAM_SIZE, max_tokens=MAX_TOKENS)
         candidates = [candidate["text"] for candidate in result["candidates"][:8]]
         if self.openai_key:
             try:
@@ -66,5 +71,5 @@ class PrefixSession(Session):
                     return [Show("OpenAI suggestion", sentence)]
         if not candidates:
             return [Show("Try again", "No supported phrase matches those groups.")]
-        status = "Dictionary fallback" if self.openai_key else "Candidates"
+        status = "Dictionary fallback" if self.openai_key or self.shortcuts else "Candidates"
         return [Show(status, "\n".join(candidates[:3]))]

@@ -2,55 +2,45 @@
 
 AirType turns wrist movements from a WHOOP 5.0 into text on a Mac. The six-gesture model recognizes roll in/out, tilt up/down, and swing left/right. The live demo maps each recognized gesture to a letter group and shows candidate words in a floating overlay.
 
-## Try the demo
+## Run the macOS app
 
-The Swift capture and overlay target macOS 13+ with Swift 5.9+. The ML model was tested with Python 3.9 and the pinned dependencies below. Run from the repository root.
+Install the Python dependencies and build the Finder app from the repository root.
+The Swift capture and overlay target macOS 13+ with Swift 5.9+.
 
 ```sh
-swift build
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r ml/requirements.txt
+sh app/build-mac-app.sh
 ```
 
-Check the text path without Bluetooth. This sample shows “go home” in Terminal.
+1. Run `.build/debug/airtype-capture discover` and copy the UUID for your strap.
+2. Open **AirType.app** from the AirType folder in Finder. Enter your UUID and choose an output such as **Type only** or **Type and speak**.
+3. For new sentences, enter an OpenAI key. For Deepgram playback, select **Deepgram** and enter its key. **Save keys** stores them in macOS Keychain. Select AirPods in macOS Sound if you want audio there.
+4. Click **Connect**. For typing, grant AirType macOS Accessibility permission and click into the target document. Use **Start** to begin a sequence, **Clear** to retry, and **Finish** to decode it. **Disconnect** returns to setup.
+
+AirType automatically checks for an exact shortcut or a unique shortcut within one gesture edit. Other sequences use the dictionary and optional OpenAI decoding. Enter the first three letters of each word (all letters if shorter) without a separate space gesture. Uncertain dictionary candidates stay in preview. Raw motion stays on the Mac when using these services. OpenAI receives the gesture groups and dictionary context, and Deepgram receives the finished text.
+
+Try the shortcuts without Bluetooth:
 
 ```sh
-printf '24 2442\nq\n' | python -B app/airtype.py --keys --no-overlay --no-typing
+printf '2452\n6315\nq\n' | python -B app/airtype.py --keys --auto-decode --no-overlay
 ```
 
-For the live demo, discover your strap as described below and use the UUID printed beside it. The overlay opens in preview mode with this command. `--always-on` skips the experimental double-tap activation.
-
-```sh
-python -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --always-on --no-typing
-```
-
-The overlay currently uses a short pause between words and a longer pause to finish the sentence. For a gesture-only check, use the same model in the Terminal readout.
+For a gesture-only hardware check, use the same model in the Terminal readout.
 
 ```sh
 python -B ml/live.py '<UUID from discovery>' --allow-mac-bond --six-model models/six-model.joblib
 ```
 
-The [demo modes](app/README.md) include rehearsed phrase shortcuts and an experimental three-letter prefix decoder with optional OpenAI sentence suggestions.
-
-## Speech
-
-`--speak` says each finished sentence aloud with Deepgram, on the Mac's current audio output (AirPods when connected and selected in System Settings → Sound). It sends the sentence to Deepgram. Store the key once in the macOS Keychain, with a hidden prompt, and nothing else is needed:
-
-```sh
-python3 -B app/speak.py --save-key      # once; paste the key at the hidden prompt
-python3 -B app/speak.py "hello"        # quick check
-python -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --always-on --no-typing --speak
-```
-
-The `DEEPGRAM_API_KEY` environment variable also works. Never put the key in a file in the repository. From code, call `speak_in_background(text)` from `app/speak.py`.
+See [demo commands and shortcuts](app/README.md) for the letter-group layout, OpenAI preview, and Terminal speech setup.
 
 ## What has been verified
 
 - WHOOP 5.0 hardware capture and Ctrl-C cleanup work on the tested Mac. The strap delivered about 100 samples per second in roughly one-second batches.
 - The frozen six-gesture model got 43 of 44 reviewed movements and 14 of 16 exact sequences on a separate mixed recording, with three false commands during reviewed background motion. The wearer reported one unidentified execution mistake, so these counts use the reviewed cue-aligned movements.
 - The six-gesture readout ran live with all six labels represented, 32 calls, and no framing rejects. This was an unguided rehearsal, so the call count is not an accuracy score. Repeated tilt-up and its downward return remain trouble spots.
-- The overlay path works in offline replay and keyboard tests. A full live sentence through the overlay, double-tap activation, and typing into another app still need a rehearsal. Typing mode requires macOS Accessibility permission for the Terminal or app launching AirType.
+- Live logs show all three rehearsed shortcuts resolving in the macOS panel and accepted OpenAI suggestions from wrist input. Combined typing and Deepgram playback still need an end-to-end rehearsal.
 
 See [the hackathon handoff](HACKATHON.md) for the demo checklist and [the plan](PLAN.md) for next steps.
 

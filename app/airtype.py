@@ -42,24 +42,34 @@ class Screen:
     """Mirror every update to the terminal, and to the floating overlay when it is running."""
 
     def __init__(self, overlay: Optional[subprocess.Popen], typing: bool,
-                 *, phrase_output: str = "preview", speaker=None) -> None:
+                 *, phrase_output: str = "preview", speaker=None, panel_stdio=False) -> None:
         self.overlay = overlay
         self.typing = typing
         self.phrase_output = phrase_output
         self.speaker = speaker
+        self.audit = None
+        self.panel_stdio = panel_stdio
 
     def apply(self, actions: Iterable[Action]) -> None:
         for action in actions:
             if isinstance(action, Show):
-                if action.status in ("Decoded", "OpenAI suggestion") and self.speaker is not None:
-                    print("[Speech] Sending phrase to the selected audio output", flush=True)
-                    self._send({"status": "Speech", "detail": "Sending phrase to audio output"})
-                    self.speaker.speak(action.detail)
-                    continue
-                print(f"[{action.status}] {action.detail}", flush=True)
-                self._send({"status": action.status, "detail": action.detail})
-                if action.status == "Decoded" and self.phrase_output == "type":
+                decoded = action.status in ("Decoded", "OpenAI suggestion")
+                if self.audit is not None:
+                    if action.status == "Listening" and action.detail.startswith("Gesture code "):
+                        print(action.detail, file=self.audit, flush=True)
+                    elif decoded or action.status in ("Candidates", "Dictionary fallback", "Try again"):
+                        print(action.status, file=self.audit, flush=True)
+                if decoded and self.speaker is not None and not self.typing:
+                    message = "Sending phrase to the selected audio output"
+                    print(f"[{action.status}] {message}", flush=True)
+                    self._send({"status": "Speech", "detail": message})
+                else:
+                    print(f"[{action.status}] {action.detail}", flush=True)
+                    self._send({"status": action.status, "detail": action.detail})
+                if decoded and self.phrase_output in ("type", "both"):
                     self._send({"type": action.detail + " "})
+                if decoded and self.speaker is not None:
+                    self.speaker.speak(action.detail)
             elif isinstance(action, TypeText):
                 print(f"TYPE: {action.text!r}", flush=True)
                 if self.typing:
@@ -68,6 +78,9 @@ class Screen:
                     self.speaker.speak(action.text)
 
     def _send(self, message: dict) -> None:
+        if self.panel_stdio:
+            print("@airtype " + json.dumps(message), flush=True)
+            return
         if self.overlay is None or self.overlay.poll() is not None:
             return
         try:
@@ -126,27 +139,76 @@ def pump_gestures(lines: Iterable[str], detector, events: queue.Queue, use_taps:
         events.put(("error", error))
 
 
-def run_stream(lines: Iterable[str], detector, session: Session, screen: Screen, *, use_taps: bool = True) -> None:
+def signal_first_sample(lines, events):
+    for index, line in enumerate(lines):
+        if index == 1:
+            events.put(("streaming", None))
+        yield line
+
+
+def pump_controls(lines, events):
+    for line in lines:
+        command = (line.decode("ascii", errors="ignore") if isinstance(line, bytes) else line).strip()
+        if command in ("start", "finish", "clear", "stop"):
+            events.put(("control", command))
+        if command == "stop":
+            return
+
+
+def run_stream(lines: Iterable[str], detector, session: Session, screen: Screen,
+               *, use_taps: bool = True, controls=None) -> None:
     events: queue.Queue = queue.Queue()
+    streaming = False
+    if controls is not None:
+        session.active = False
+        lines = signal_first_sample(lines, events)
+        screen.apply([Show("Connecting", "Waiting for motion data")])
+        threading.Thread(target=pump_controls, args=(controls, events), daemon=True).start()
+    else:
+        screen.apply(session.ready())
     threading.Thread(target=pump_gestures, args=(lines, detector, events, use_taps), daemon=True).start()
-    screen.apply(session.ready())
     while True:
         try:
             kind, payload = events.get(timeout=TICK_SECONDS)
         except queue.Empty:
-            screen.apply(session.on_tick(time.monotonic()))
+            if controls is None:
+                screen.apply(session.on_tick(time.monotonic()))
             continue
         now = time.monotonic()
-        if kind == "gesture":
-            print(f"  gesture: {payload.direction}", flush=True)
-            screen.apply(session.on_gesture(payload.direction, payload.start, payload.end, now))
+        if kind == "streaming":
+            streaming = True
+            screen._send({"control": "start"})
+            screen.apply([Show("Ready", "Click Start when you are ready to gesture")])
+        elif kind == "control":
+            if payload == "stop":
+                return
+            if payload == "start" and streaming and not session.active:
+                session.active = True
+                screen.apply([Show("Listening", "Make your gestures, then click Finish")])
+                screen._send({"control": "finish"})
+            elif payload in ("finish", "clear") and session.active:
+                screen._send({"control": "disabled"})
+                if payload == "finish" and session.current:
+                    screen.apply([Show("Decoding", "Reading the gesture sequence")])
+                    screen.apply(session.on_double_tap(now))
+                else:
+                    session.current.clear()
+                    session.last_end = session.last_heard = None
+                    screen.apply([Show("Ready", "Click Start when you are ready to gesture")])
+                session.active = False
+                screen._send({"control": "start"})
+        elif kind == "gesture":
+            if controls is None or session.active:
+                print(f"  gesture: {payload.direction}", flush=True)
+                screen.apply(session.on_gesture(payload.direction, payload.start, payload.end, now))
         elif kind == "tap":
             print("  double tap", flush=True)
             screen.apply(session.on_double_tap(now))
         elif kind == "error":
             raise payload
-        else:
-            screen.apply(session.on_double_tap(now) if session.active and (session.words or session.current) else [])
+        elif kind == "end":
+            if controls is None and session.active and (session.words or session.current):
+                screen.apply(session.on_double_tap(now))
             return
 
 
@@ -193,6 +255,8 @@ def main() -> int:
                         help="Let Claude choose between candidate words. Needs ANTHROPIC_API_KEY and "
                              "sends the candidate words to Anthropic.")
     modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--auto-decode", action="store_true",
+                       help="Use matching shortcuts first, then OpenAI when a key is available")
     modes.add_argument("--phrase-demo", action="store_true",
                        help="Decode rehearsed abbreviated phrases")
     modes.add_argument("--prefix-preview", action="store_true",
@@ -202,32 +266,40 @@ def main() -> int:
     parser.add_argument("--prefix-context", default="", help="Optional context and likely demo words for OpenAI")
     parser.add_argument("--speak", action="store_true",
                         help="Speak completed sentences with Deepgram (environment or Keychain key)")
-    parser.add_argument("--phrase-output", choices=("preview", "type", "speak"), default="preview",
-                        help="Display, type into the focused app, or speak a decoded demo phrase")
+    parser.add_argument("--output", "--phrase-output", dest="phrase_output",
+                        choices=("preview", "type", "speak", "both"), default="preview",
+                        help="Output for a decoded phrase. Both types and speaks it.")
+    parser.add_argument("--panel-stdio", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--controls", action="store_true",
+                        help="Use Start, Finish and Clear on the floating panel for live phrases")
     parser.add_argument("--speech-backend", choices=("macos", "deepgram"), default="macos",
-                        help="Speech provider for --phrase-output speak")
+                        help="Speech provider for --output speak or both")
     args = parser.parse_args()
-    continuous_preview = args.phrase_demo or args.prefix_preview
+    if args.panel_stdio:
+        args.controls = True
+    continuous_preview = args.auto_decode or args.phrase_demo or args.prefix_preview
     if args.prefix_openai and not args.prefix_preview:
         parser.error("--prefix-openai requires --prefix-preview.")
-    if args.prefix_context and not args.prefix_openai:
-        parser.error("--prefix-context requires --prefix-openai.")
-    openai_key = os.environ.get("OPENAI_API_KEY", "").strip() if args.prefix_openai else None
+    use_openai = args.prefix_openai or args.auto_decode
+    if args.prefix_context and not use_openai:
+        parser.error("--prefix-context requires --auto-decode or --prefix-openai.")
+    openai_key = os.environ.get("OPENAI_API_KEY", "").strip() if use_openai else None
     if args.prefix_openai and not openai_key:
         parser.error("--prefix-openai requires OPENAI_API_KEY in the environment.")
     if continuous_preview and args.llm:
-        parser.error("Use --prefix-preview --prefix-openai for experimental sentence decoding.")
-    if args.phrase_output != "preview" and not args.phrase_demo:
-        parser.error("--phrase-output requires --phrase-demo.")
-    if args.phrase_output == "type" and (args.no_overlay or args.no_typing):
+        parser.error("Use --auto-decode or --prefix-preview --prefix-openai for OpenAI decoding.")
+    if args.controls and (not continuous_preview or args.no_overlay or args.device is None):
+        parser.error("--controls requires a live UUID, the overlay, and a phrase decoding mode.")
+    if args.phrase_output != "preview" and not continuous_preview:
+        parser.error("--output requires --auto-decode, --phrase-demo, or --prefix-preview.")
+    phrase_typing = args.phrase_output in ("type", "both")
+    if phrase_typing and (args.no_overlay or args.no_typing):
         parser.error("Typing phrases requires the overlay and cannot use --no-typing.")
-    if args.speak and args.phrase_output == "type":
-        parser.error("Choose typing or --speak for the phrase demo.")
-    if args.prefix_preview and args.speak and not args.prefix_openai:
-        parser.error("Speaking a prefix suggestion requires --prefix-openai.")
-    speaking = args.speak or args.phrase_output == "speak"
+    speaking = args.speak or args.phrase_output in ("speak", "both")
+    if args.prefix_preview and (speaking or phrase_typing) and not args.prefix_openai:
+        parser.error("Typing or speaking a prefix suggestion requires --prefix-openai.")
     if args.speech_backend == "deepgram" and not speaking:
-        parser.error("--speech-backend deepgram requires --speak or --phrase-output speak.")
+        parser.error("--speech-backend deepgram requires --speak or --output speak or both.")
     speech_key = None
     if args.speech_backend == "deepgram" or args.speak:
         from speak import find_key
@@ -248,25 +320,38 @@ def main() -> int:
     if args.phrase_demo:
         from phrase_demo import PhraseSession
         session = PhraseSession(layout, sentence_gap=args.sentence_gap)
-    elif args.prefix_preview:
+    elif args.auto_decode or args.prefix_preview:
         from prefix_preview import PrefixSession
         session = PrefixSession(layout, load_words(), sentence_gap=args.sentence_gap,
-                                openai_key=openai_key, context=args.prefix_context)
+                                openai_key=openai_key, context=args.prefix_context,
+                                prefer_shortcuts=args.auto_decode)
     else:
         session = Session(Lexicon(load_words(), layout), word_gap=args.word_gap, sentence_gap=args.sentence_gap,
                           always_on=args.always_on or args.keys, choose=choose)
 
+    typing = phrase_typing or not (args.no_typing or continuous_preview)
     overlay = None
-    if not args.no_overlay:
+    if not (args.no_overlay or args.panel_stdio):
         if not OVERLAY.is_file():
             parser.error("Run swift build in AirType first, or pass --no-overlay.")
-        overlay = subprocess.Popen([str(OVERLAY)], stdin=subprocess.PIPE, text=True)
+        overlay_args = [str(OVERLAY)]
+        if args.controls:
+            overlay_args.append("--controls")
+        if typing:
+            overlay_args.append("--typing")
+        overlay = subprocess.Popen(overlay_args, stdin=subprocess.PIPE, text=True,
+                                   stdout=subprocess.PIPE if args.controls else None)
     speaker = None
     if speaking:
         from speech import Speaker
         speaker = Speaker(deepgram_key=speech_key)
-    typing = args.phrase_output == "type" or not (args.no_typing or continuous_preview)
-    screen = Screen(overlay, typing=typing, phrase_output=args.phrase_output, speaker=speaker)
+    screen = Screen(overlay, typing=typing, phrase_output=args.phrase_output,
+                    speaker=speaker, panel_stdio=args.panel_stdio)
+    control_input = None
+    if args.panel_stdio:
+        control_input = os.fdopen(os.dup(sys.stdin.fileno()), "rb", buffering=0)
+    elif args.controls:
+        control_input = overlay.stdout
 
     try:
         if args.keys:
@@ -287,8 +372,10 @@ def main() -> int:
             captures.mkdir(exist_ok=True)
             folder = Path(tempfile.mkdtemp(prefix="live.", dir=captures))
             print(f"Saving raw motion to {folder}. Ctrl-C to stop.", flush=True)
-            with live.strap(args.device) as lines:
-                run_stream(live.saved(lines, folder / "motion.csv"), detector, session, screen, use_taps=not continuous_preview)
+            with (folder / "events.log").open("w") as audit, live.strap(args.device) as lines:
+                screen.audit = audit
+                run_stream(live.saved(lines, folder / "motion.csv"), detector, session, screen,
+                           use_taps=not continuous_preview, controls=control_input)
     except KeyboardInterrupt:
         print("\nStopping.", flush=True)
     except ModuleNotFoundError as error:
