@@ -12,9 +12,6 @@ WHOOP 5.0. The [main README](README.md) has the setup and run commands.
   boundaries. The keyboard stand-in and motion replay exercised the text path.
   Start with `--always-on --no-typing` to check the overlay without relying on
   the experimental tap gesture or typing into another app.
-- **The continuous decoder is available separately.** It infers spaces and can
-  rank candidates with Gemini. Connecting it to the live overlay and measuring
-  real phrase accuracy are the next integration tasks.
 
 Before the demo, rehearse one short phrase standing, including the pauses and
 finish behavior you will use on stage. Record a backup. Prefer the rehearsal

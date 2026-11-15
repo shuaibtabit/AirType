@@ -31,8 +31,6 @@ The overlay currently uses a short pause between words and a longer pause to fin
 python -B ml/live.py '<UUID from discovery>' --allow-mac-bond --six-model models/six-model.joblib
 ```
 
-The [standalone continuous decoder](app/README.md) infers spaces without a pause between words and supports optional Gemini phrase ranking. Its inferred boundaries are still separate from the live overlay.
-
 ## What has been verified
 
 - WHOOP 5.0 hardware capture and Ctrl-C cleanup work on the tested Mac. The strap delivered about 100 samples per second in roughly one-second batches.
@@ -93,6 +91,6 @@ The CSV has one row per paired sample. It preserves strap Unix seconds and fract
 - `sensor/` holds the capture executable and protocol tests.
 - `research/` holds the source audit, firmware evidence, and local checkout locations.
 - `ml/` contains the prompted recorder, training, evaluation, and live gesture readout.
-- `app/` contains the live demo and standalone continuous decoder.
+- `app/` contains the live demo.
 - `models/` holds the two fitted gesture models.
 - [PLAN.md](PLAN.md) tracks milestones and evidence.
