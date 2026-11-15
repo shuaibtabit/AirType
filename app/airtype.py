@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT / "ml"))
 
 from decoder import Lexicon, first_choices, load_layout, load_words  # noqa: E402
 from session import Action, Session, Show, TypeText  # noqa: E402
-from speak import speak_in_background  # noqa: E402
+from speak import find_key, speak_in_background  # noqa: E402
 from taps import double_taps  # noqa: E402
 
 OVERLAY = ROOT / ".build/debug/airtype-overlay"
@@ -185,7 +185,7 @@ def main() -> int:
                              "sends the candidate words to Anthropic.")
     parser.add_argument("--speak", action="store_true",
                         help="Say each finished sentence aloud (AirPods if connected). Needs "
-                             "DEEPGRAM_API_KEY and sends the sentence to Deepgram.")
+                             "a Deepgram key and sends the sentence to Deepgram.")
     args = parser.parse_args()
     if sum([args.device is not None, args.replay is not None, args.keys]) != 1:
         parser.error("Choose one: a device UUID, --replay with a motion.csv, or --keys.")
@@ -206,8 +206,8 @@ def main() -> int:
         if not OVERLAY.is_file():
             parser.error("Run swift build in AirType first, or pass --no-overlay.")
         overlay = subprocess.Popen([str(OVERLAY)], stdin=subprocess.PIPE, text=True)
-    if args.speak and not os.environ.get("DEEPGRAM_API_KEY", "").strip():
-        parser.error("--speak needs DEEPGRAM_API_KEY in the environment.")
+    if args.speak and not find_key():
+        parser.error("--speak needs a Deepgram key: see the Speech section of the README.")
     screen = Screen(overlay, typing=not args.no_typing, speak=speak_in_background if args.speak else None)
 
     try:

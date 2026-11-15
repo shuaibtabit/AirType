@@ -3,35 +3,54 @@ work once they are connected and selected in System Settings > Sound.
 
   python3 -B app/speak.py "hello world"
 
-Needs DEEPGRAM_API_KEY in the environment. This sends the text to Deepgram.
+Needs a Deepgram key: the DEEPGRAM_API_KEY environment variable, or a macOS Keychain item
+named "deepgram" (store it once with: security add-generic-password -a "$USER" -s deepgram -w).
+This sends the text to Deepgram.
 """
 
 import json
 import os
+import ssl
 import subprocess
 import sys
 import tempfile
 import threading
+from pathlib import Path
 import urllib.error
 import urllib.request
 
 MODEL = "aura-2-thalia-en"
 TIMEOUT_SECONDS = 10
+SYSTEM_CERTS = Path("/etc/ssl/cert.pem")  # python.org Pythons on macOS ship without certificates
+
+
+def find_key() -> str:
+    """Environment variable first, then the macOS Keychain. Empty string if neither has one."""
+    key = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+    if key:
+        return key
+    try:
+        result = subprocess.run(["security", "find-generic-password", "-a", os.environ.get("USER", ""),
+                                 "-s", "deepgram", "-w"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def speak(text: str, api_key: str = "") -> bool:
     """Blocking. True if the audio played. Failures print a short reason and return False;
     the key and the text are never printed."""
-    key = api_key or os.environ.get("DEEPGRAM_API_KEY", "").strip()
+    key = api_key or find_key()
     if not key or not text.strip():
-        print("Speech skipped: need DEEPGRAM_API_KEY and non-empty text.", flush=True)
+        print("Speech skipped: no Deepgram key (see app/speak.py) or empty text.", flush=True)
         return False
+    context = ssl.create_default_context(cafile=str(SYSTEM_CERTS)) if SYSTEM_CERTS.is_file() else None
     request = urllib.request.Request(
         f"https://api.deepgram.com/v1/speak?model={MODEL}",
         data=json.dumps({"text": text.strip()}).encode(), method="POST",
         headers={"Authorization": f"Token {key}", "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS, context=context) as response:
             audio = response.read()
         with tempfile.NamedTemporaryFile(suffix=".mp3") as file:
             file.write(audio)

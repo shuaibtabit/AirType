@@ -31,6 +31,18 @@ The overlay currently uses a short pause between words and a longer pause to fin
 python -B ml/live.py '<UUID from discovery>' --allow-mac-bond --six-model models/six-model.joblib
 ```
 
+## Speech
+
+`--speak` says each finished sentence aloud with Deepgram, on the Mac's current audio output (AirPods when connected and selected in System Settings → Sound). It sends the sentence to Deepgram. Store the key once in the macOS Keychain, with a hidden prompt, and nothing else is needed:
+
+```sh
+security add-generic-password -a "$USER" -s deepgram -w
+python3 -B app/speak.py "hello"        # quick check
+python -B app/airtype.py '<UUID from discovery>' --allow-mac-bond --always-on --no-typing --speak
+```
+
+The `DEEPGRAM_API_KEY` environment variable also works. Never put the key in a file in the repository. From code, call `speak_in_background(text)` from `app/speak.py`.
+
 ## What has been verified
 
 - WHOOP 5.0 hardware capture and Ctrl-C cleanup work on the tested Mac. The strap delivered about 100 samples per second in roughly one-second batches.
