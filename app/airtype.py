@@ -21,13 +21,14 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
-from typing import Iterable, Iterator, List, Optional, Sequence
+from typing import Callable, Iterable, Iterator, List, Optional, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "ml"))
 
 from decoder import Lexicon, first_choices, load_layout, load_words  # noqa: E402
 from session import Action, Session, Show, TypeText  # noqa: E402
+from speak import speak_in_background  # noqa: E402
 from taps import double_taps  # noqa: E402
 
 OVERLAY = ROOT / ".build/debug/airtype-overlay"
@@ -41,9 +42,11 @@ KEY_HELP = "Keys: 1-6 = gestures in layout order, space = next word, Enter = typ
 class Screen:
     """Mirror every update to the terminal, and to the floating overlay when it is running."""
 
-    def __init__(self, overlay: Optional[subprocess.Popen], typing: bool) -> None:
+    def __init__(self, overlay: Optional[subprocess.Popen], typing: bool,
+                 speak: Optional[Callable[[str], None]] = None) -> None:
         self.overlay = overlay
         self.typing = typing
+        self.speak = speak
 
     def apply(self, actions: Iterable[Action]) -> None:
         for action in actions:
@@ -54,6 +57,8 @@ class Screen:
                 print(f"TYPE: {action.text!r}", flush=True)
                 if self.typing:
                     self._send({"type": action.text})
+                if self.speak and action.text.strip():
+                    self.speak(action.text)
 
     def _send(self, message: dict) -> None:
         if self.overlay is None or self.overlay.poll() is not None:
@@ -178,6 +183,9 @@ def main() -> int:
     parser.add_argument("--llm", action="store_true",
                         help="Let Claude choose between candidate words. Needs ANTHROPIC_API_KEY and "
                              "sends the candidate words to Anthropic.")
+    parser.add_argument("--speak", action="store_true",
+                        help="Say each finished sentence aloud (AirPods if connected). Needs "
+                             "DEEPGRAM_API_KEY and sends the sentence to Deepgram.")
     args = parser.parse_args()
     if sum([args.device is not None, args.replay is not None, args.keys]) != 1:
         parser.error("Choose one: a device UUID, --replay with a motion.csv, or --keys.")
@@ -198,7 +206,9 @@ def main() -> int:
         if not OVERLAY.is_file():
             parser.error("Run swift build in AirType first, or pass --no-overlay.")
         overlay = subprocess.Popen([str(OVERLAY)], stdin=subprocess.PIPE, text=True)
-    screen = Screen(overlay, typing=not args.no_typing)
+    if args.speak and not os.environ.get("DEEPGRAM_API_KEY", "").strip():
+        parser.error("--speak needs DEEPGRAM_API_KEY in the environment.")
+    screen = Screen(overlay, typing=not args.no_typing, speak=speak_in_background if args.speak else None)
 
     try:
         if args.keys:
